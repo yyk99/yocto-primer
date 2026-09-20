@@ -20,7 +20,7 @@ cd poky
 source oe-init-build-env build
 # edit conf/local.conf: MACHINE = "qemux86-64"
 bitbake core-image-minimal
-runqemu qemux86-64
+runqemu qemux86-64 nographic
 ```
 
 Use a stable release branch (e.g. `scarthgap`, an LTS) and keep all layers on the same branch.
@@ -81,3 +81,111 @@ Then `kas build kas.yml` reproduces the whole build.
 - `devtool modify <recipe>` is the easiest way to iterate on source and generate patches.
 
 I can go deeper on any piece, such as writing a recipe, setting up the GitHub Actions workflow, or structuring a kas config for multiple machines. Which is closest to what you're doing?
+
+
+## Build for Raspberry Pi 3
+Use the `meta-raspberrypi` BSP layer, which provides these machines for the Pi 3:
+
+- `raspberrypi3-64`: 64-bit (aarch64). This is the one to prefer for a Pi 3 or 3B+ on a current release.
+- `raspberrypi3`: 32-bit (armv7). Use it if you specifically need a 32-bit userland.
+
+In `conf/local.conf`:
+
+```
+MACHINE ?= "raspberrypi3-64"
+```
+
+You also need to add the layer, on the same release branch as your poky checkout (e.g. `scarthgap`):
+
+```bash
+git clone -b scarthgap https://git.yoctoproject.org/meta-raspberrypi
+bitbake-layers add-layer ../meta-raspberrypi
+```
+
+`meta-raspberrypi` depends on `meta-oe`, `meta-python`, and `meta-multimedia` from `meta-openembedded`, so those need to be in `bblayers.conf` too. Then build an image such as `core-image-base` or `rpi-test-image`.
+
+To write the image to an SD card, the output is in `build/tmp/deploy/images/raspberrypi3-64/` and ends in `.wic.bz2` (or `.wic.xz`, depending on the release). Flash it with `bmaptool` or `dd`.
+
+The `raspberrypi3` machine names and the exact `IMAGE_FSTYPES` defaults have shifted between releases, so check the layer's README on your branch, and list `conf/machine/` in the layer to confirm the names available.
+
+# How to clean up for a particular MACHINE
+
+Changing `MACHINE` doesn't wipe anything. Everything goes into the same `build/tmp/`, and the machine-specific parts sit side by side. Here is how to clean up, from lightest to heaviest.
+
+**1. Delete `tmp/` (most common)**
+
+```bash
+rm -rf build/tmp
+```
+
+It's safe because `tmp/` is disposable output. What makes rebuilds fast lives elsewhere, in `sstate-cache/` and `downloads/`, and both survive. After deleting `tmp/`, a rebuild mostly restores from sstate rather than recompiling. This is the standard way to reclaim space.
+
+**2. Remove only the first machine's leftovers**
+
+If you want to keep `tmp/` and drop one machine's outputs:
+
+```bash
+rm -rf build/tmp/deploy/images/raspberrypi3-64
+rm -rf build/tmp/work/raspberrypi3_64-*      # machine-specific work dirs
+```
+
+The exact work directory names vary (they use the machine's tune/arch, and `-` becomes `_`), so list `tmp/work/` first. Shared packages built for a common arch, like `x86-64-v3-poky-linux`, are reused by other machines that share that arch, so don't delete them blindly.
+
+**3. Clean through BitBake**
+
+```bash
+bitbake -c cleansstate <recipe>   # one recipe: work dir + its sstate
+bitbake -c cleanall <recipe>      # also removes downloaded sources
+bitbake -c clean <recipe>         # work dir only
+```
+
+`cleansstate` also deletes the cached artifact, so that recipe will fully rebuild next time. `cleanall` is the one that costs you re-downloads, so use it sparingly. You can also run these against an image target, though that only cleans that image recipe itself, not its dependencies.
+
+**4. Avoid the problem: separate build dirs or `TMPDIR`**
+
+```bash
+source oe-init-build-env build-rpi3
+source oe-init-build-env build-qemu
+```
+
+Each has its own `tmp/`, and you can point both at one shared cache by setting in each `local.conf`:
+
+```
+DL_DIR = "/home/yyk/yocto-cache/downloads"
+SSTATE_DIR = "/home/yyk/yocto-cache/sstate-cache"
+```
+
+That gives you independent `tmp/` directories that are trivial to delete, while still sharing downloads and sstate between them.
+
+**5. Reclaim space automatically**
+
+Adding `INHERIT += "rm_work"` to `local.conf` deletes each recipe's work directory after it builds, which cuts disk use dramatically. The trade-off is that you lose the work directories for debugging. You can exclude recipes you're actively working on with `RM_WORK_EXCLUDE += "myrecipe"`.
+
+The `sstate-cache/` directory grows over time. To trim it, use `scripts/sstate-cache-management.py` from poky, or just delete files older than some age.
+
+# what MACHINE for raspberry pi 3 with qemu?
+
+There isn't a dedicated one. Poky's QEMU machines (`qemux86-64`, `qemuarm64`, `qemuarm`, and so on) emulate generic virtual boards, not a Raspberry Pi. And `raspberrypi3-64` from `meta-raspberrypi` builds images for real hardware, which `runqemu` can't boot as-is (it needs a QEMU-specific kernel and machine setup).
+
+**Closest match**
+
+```
+MACHINE ?= "qemuarm64"
+```
+
+This gives you the same CPU architecture (aarch64) as the Pi 3 in 64-bit mode, so userland software, recipes, and your own layer's packages behave the same. For a 32-bit Pi 3 userland, use `qemuarm`. Then:
+
+```bash
+bitbake core-image-minimal
+runqemu qemuarm64 nographic
+```
+
+**What you don't get**
+
+QEMU's `qemuarm64` is a generic `virt` board, so none of the Pi's hardware is emulated: no VideoCore, GPIO, the Pi's bootloader and firmware, or the Pi-specific device tree. Anything depending on those must be tested on the real board.
+
+**Emulating the actual Pi 3**
+
+Upstream QEMU has a `raspi3b` machine (`qemu-system-aarch64 -M raspi3b ...`). Its peripheral support is partial, and it needs the Pi kernel, a matching DTB, and a manual command line. I'm not aware of a clean, supported `runqemu` path for it in `meta-raspberrypi`, so check the layer's README on your branch. If you need it, you'd run QEMU by hand against the built kernel and image.
+
+A common workflow is to develop and test general software on `qemuarm64`, and only build `raspberrypi3-64` when you need to verify on the Pi. You can keep two build directories for this and share `DL_DIR` and `SSTATE_DIR` between them.
