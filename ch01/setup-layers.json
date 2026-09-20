@@ -1,0 +1,31 @@
+{
+    "sources": {
+        "meta-raspberrypi": {
+            "git-remote": {
+                "branch": "scarthgap",
+                "describe": "",
+                "remotes": {
+                    "origin": {
+                        "uri": "https://git.yoctoproject.org/meta-raspberrypi"
+                    }
+                },
+                "rev": "6ca1f75017cc5d5acdb8bb05634c4bc01fa049fd"
+            },
+            "path": "meta-raspberrypi"
+        },
+        "poky": {
+            "git-remote": {
+                "branch": "scarthgap",
+                "describe": "yocto-5.0.20-82-g77d1feb37e",
+                "remotes": {
+                    "origin": {
+                        "uri": "https://git.yoctoproject.org/poky"
+                    }
+                },
+                "rev": "77d1feb37e280733684ae8a9449fb031d5d7ff40"
+            },
+            "path": "poky"
+        }
+    },
+    "version": "1.0"
+}
