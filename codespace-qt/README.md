@@ -91,7 +91,19 @@ at the guest's screen.
 
 ## Option 3 — full desktop via `desktop-lite`
 
-`.devcontainer/devcontainer.json` in this folder adds the
+**What "noVNC desktop" means**: `desktop-lite` runs a real X server + a
+lightweight window manager (Fluxbox) inside the container, with a VNC server
+(TigerVNC) attached to it. noVNC is a VNC client written in JavaScript that
+runs entirely in your browser and talks to that VNC server over a WebSocket
+(bridged by `websockify`) — so "the noVNC desktop" is just that Fluxbox
+desktop, viewed through a browser tab instead of a native VNC app. That's
+what makes it reachable from the web-based Codespaces UI at all: plain VNC
+is raw TCP (the web UI can't forward that), but noVNC speaks HTTP/WebSocket
+on port 6080, which the web Ports panel proxies just fine.
+
+`.devcontainer/codespace-qt/devcontainer.json` (repo root — Codespaces only
+discovers alternate configs under `.devcontainer/<name>/`, not inside this
+subfolder) adds the
 [`desktop-lite`](https://github.com/devcontainers/features/tree/main/src/desktop-lite)
 feature, which installs Fluxbox + TigerVNC + noVNC into the container itself
 and forwards port 6080:
@@ -107,9 +119,39 @@ and forwards port 6080:
 }
 ```
 
-Rebuild the container, open port 6080 in the browser, log in with the
-default password `vscode`, open a terminal *inside that desktop* (or use the
-one VS Code opens there automatically), and just run:
+### Starting it in the web-based Codespaces UI
+
+1. On this repo's page (or `github.com/codespaces/new`), click **Code → Codespaces
+   → "..." → New with options**, and pick **codespace-qt** as the dev
+   container configuration (this is why it has to live under root
+   `.devcontainer/codespace-qt/`, not `codespace-qt/.devcontainer/`). If a
+   Codespace already exists but was created before this config existed, you
+   need a *new* Codespace from this config — rebuilding an existing one
+   reuses whatever config it was created with.
+2. Once it's built, open the **Ports** tab (bottom panel), find port
+   **6080**, and click the globe icon (or right-click → *Open in Browser*).
+   That opens noVNC's `vnc.html` through the Codespaces port-forwarding
+   proxy, so it works purely over HTTPS in the browser tab — no VS Code
+   Desktop, no VNC client, no SSH tunnel needed.
+3. Click **Connect** on the noVNC page and enter the password `vscode`
+   (default). You're now looking at the Fluxbox desktop.
+
+If you're already in a plain Codespace (no `desktop-lite` feature) and don't
+want to recreate it, you can bootstrap the same thing by hand instead:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y fluxbox tigervnc-standalone-server novnc websockify
+vncserver :1 -localhost no -SecurityTypes None -geometry 1280x800
+DISPLAY=:1 fluxbox &
+websockify --web=/usr/share/novnc 6080 localhost:5901
+```
+
+then forward/open port 6080 the same way. This is exactly what
+`desktop-lite` automates for you.
+
+Once you're connected, open a terminal *inside that desktop* (or use the one
+VS Code opens there automatically), and just run:
 
 ```bash
 qemu-system-x86_64 -enable-kvm -m 2048 <...>
@@ -148,3 +190,4 @@ filesystem, which is a separate OS image with its own package manager
 - [Running QEMU Virtual Machine in GitHub Codespaces](https://chun.itcdt.top/2024/07/Running-QEMU-Virtual-Machine-in-Github-Codespaces/)
 - [`devcontainers/features` — `desktop-lite`](https://github.com/devcontainers/features/tree/main/src/desktop-lite)
 - [`devcontainers/images` #884 — KVM missing on the Jammy variant](https://github.com/devcontainers/images/issues/884)
+- [Introduction to dev containers — multiple configs under `.devcontainer/<name>/`](https://docs.github.com/en/codespaces/setting-up-your-project-for-codespaces/adding-a-dev-container-configuration/introduction-to-dev-containers)
