@@ -119,6 +119,22 @@ qemu-system-x86_64 -enable-kvm -m 2048 <...>
 No `-vnc` flag needed this time — QEMU opens its normal SDL/GTK window,
 which now has an actual X server (Fluxbox) to open it on.
 
+**Smoke-test the desktop before bothering with QEMU at all**: this pipeline
+(noVNC → Fluxbox → X server) works independently of QEMU, and `apt` on the
+container can install a plain X11 app to prove it — no Yocto build, no
+image, no VM:
+
+```bash
+scripts/desktop-lite-smoke-test.sh
+```
+
+It installs `x11-apps` (for `xeyes`) if missing and launches it; if it shows
+up in the noVNC desktop, the whole rendering path is confirmed and any
+QEMU window will show up the same way. This only works for apps installed
+*on the container itself* — `apt` has no reach into a QEMU guest's
+filesystem, which is a separate OS image with its own package manager
+(`opkg` by default for Yocto images).
+
 ## Which one to use
 
 - Quick look at a Yocto image's boot/GUI, nothing else needed → **Option 1**.
