@@ -85,6 +85,23 @@ separate kernel + ext4 rootfs + boot config, not the single whole-disk file
   release/image), just running it with no extra args opens a normal QEMU
   window with the Sato desktop.
 
+### Saving disk space
+
+The rootfs is downloaded compressed (`.ext4.zst`, ~170MB) but has to be
+decompressed to a plain `.ext4` (~850MB) to boot. Once you've verified an
+image boots, you can delete the big decompressed copy and keep just the
+`.zst` — `run-core-image.sh` notices it's missing and transparently
+decompresses it again (a few seconds) the next time you run it:
+
+```bash
+rm downloads/qemux86-64-sato/core-image-sato-qemux86-64.rootfs.ext4
+```
+
+The `.sha256sum` files are a few bytes each and not worth removing. If
+you're done with an image entirely, just delete its whole directory under
+`downloads/` — re-fetching later is one command
+(`fetch-core-image-sato.sh`).
+
 ## Option 1 — direct VNC, no desktop
 
 `scripts/run-qemu-vnc.sh` boots a single whole-disk image (a `.wic`, as

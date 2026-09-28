@@ -62,9 +62,26 @@ cmdline_append="$(conf_val qb_kernel_cmdline_append)"
 
 kernel="$dir/${kernel_imagetype}-${machine}.bin"
 rootfs="$dir/${image_link_name}.${fstype}"
-for f in "$kernel" "$rootfs"; do
-    [ -f "$f" ] || { echo "error: expected file not found: $f (decompress it first if it's still .zst/.bz2/.gz)" >&2; exit 1; }
-done
+
+# Decompress on demand: if only the compressed rootfs is present (e.g. the
+# large decompressed copy was deleted to save disk space), regenerate it
+# and keep the compressed original either way.
+if [ ! -f "$rootfs" ]; then
+    for ext in zst bz2 gz; do
+        compressed="$rootfs.$ext"
+        [ -f "$compressed" ] || continue
+        echo "$rootfs missing, decompressing $compressed ..." >&2
+        case "$ext" in
+            zst) zstd -d -k -f "$compressed" ;;
+            bz2) bunzip2 -k -f "$compressed" ;;
+            gz)  gunzip -k -f "$compressed" ;;
+        esac
+        break
+    done
+fi
+
+[ -f "$kernel" ] || { echo "error: expected file not found: $kernel" >&2; exit 1; }
+[ -f "$rootfs" ] || { echo "error: expected file not found: $rootfs (no compressed .zst/.bz2/.gz found to decompress either)" >&2; exit 1; }
 
 if "$here/check-kvm.sh" >/dev/null 2>&1; then
     cpu="$(conf_val qb_cpu_kvm)"
