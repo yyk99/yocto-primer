@@ -45,14 +45,56 @@ If it's not available, drop `-enable-kvm` (or pass `-machine accel=tcg`)
 and expect QEMU to run in pure software emulation — much slower, but it
 still boots and still displays fine.
 
-## Option 1 — direct VNC, no desktop
+## Getting an image to test with
 
-`scripts/run-qemu-vnc.sh` boots a disk image (or a Yocto `runqemu`-built
-image directly with `qemu-system-x86_64`) with its display exported as VNC
-display `:1` (TCP port 5901), auto-detecting KVM:
+No need to build anything — the Yocto Project publishes prebuilt images per
+release. `scripts/fetch-core-image-sato.sh` downloads the kernel, rootfs,
+and `.qemuboot.conf` for a given release/machine/profile, verifies their
+checksums, and decompresses the rootfs:
 
 ```bash
-scripts/run-qemu-vnc.sh /path/to/core-image-sato-qemux86-64.wic
+scripts/fetch-core-image-sato.sh yocto-6.0.3 qemux86-64 sato ./downloads
+```
+
+It scrapes the actual directory listing at
+`downloads.yoctoproject.org/releases/yocto/<release>/machines/qemu/<machine>/`
+rather than guessing filenames, since naming (a `.rootfs` infix, `.zst` vs
+`.bz2` compression) has changed between releases. A `qemux86-64` image is a
+separate kernel + ext4 rootfs + boot config, not the single whole-disk file
+`run-qemu-vnc.sh` below expects — boot it one of two ways instead:
+
+- **With poky's `runqemu`** (see `ch01/README.md` for getting poky):
+  ```bash
+  cd downloads && runqemu qemux86-64 core-image-sato
+  # or: runqemu downloads/core-image-sato-qemux86-64.rootfs.qemuboot.conf
+  ```
+- **Without poky**, `scripts/run-core-image.sh` reads the downloaded
+  `.qemuboot.conf` itself (cpu, memory, kernel cmdline, ...) and drives
+  `qemu-system-*` directly — no poky checkout needed:
+  ```bash
+  scripts/run-core-image.sh downloads/qemux86-64-sato
+  ```
+  It auto-detects KVM the same way `run-qemu-vnc.sh` does, and passes
+  through any extra arguments to QEMU — so on a Codespace (no local
+  display), add `-vnc :1 -display none` to reuse Option 1/2 below instead of
+  trying to open a window:
+  ```bash
+  scripts/run-core-image.sh downloads/qemux86-64-sato -vnc :1 -display none
+  ```
+  On a machine with a real display (tested directly against this exact
+  release/image), just running it with no extra args opens a normal QEMU
+  window with the Sato desktop.
+
+## Option 1 — direct VNC, no desktop
+
+`scripts/run-qemu-vnc.sh` boots a single whole-disk image (a `.wic`, as
+produced by `bitbake` for a real-hardware machine like `genericx86-64`, or
+any other raw disk image) with its display exported as VNC display `:1`
+(TCP port 5901), auto-detecting KVM. It does *not* fit the `qemux86-64`
+kernel+rootfs pair from the section above — use `runqemu` for those instead:
+
+```bash
+scripts/run-qemu-vnc.sh /path/to/core-image-sato-genericx86-64.wic
 ```
 
 To reach port 5901 from your machine, VNC is a raw TCP protocol, so the
