@@ -1,2 +1,4 @@
 meta-raspberrypi/
 poky/
+.oe-layers.json
+setup-build
