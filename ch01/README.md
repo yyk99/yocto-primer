@@ -189,3 +189,50 @@ QEMU's `qemuarm64` is a generic `virt` board, so none of the Pi's hardware is em
 Upstream QEMU has a `raspi3b` machine (`qemu-system-aarch64 -M raspi3b ...`). Its peripheral support is partial, and it needs the Pi kernel, a matching DTB, and a manual command line. I'm not aware of a clean, supported `runqemu` path for it in `meta-raspberrypi`, so check the layer's README on your branch. If you need it, you'd run QEMU by hand against the built kernel and image.
 
 A common workflow is to develop and test general software on `qemuarm64`, and only build `raspberrypi3-64` when you need to verify on the Pi. You can keep two build directories for this and share `DL_DIR` and `SSTATE_DIR` between them.
+
+# When should I bitbake-layers create-layers-setup ?
+
+Run it once your layers are in a state you want to reproduce. It records the layers currently listed in `bblayers.conf` (their git remotes and exact commits) so someone else can recreate the same checkout.
+
+```bash
+bitbake-layers create-layers-setup /path/to/output-dir
+```
+
+That produces two files:
+
+- `setup-layers.json`: the layer list, each with its remote URL, branch, and pinned revision.
+- `setup-layers`: a script that clones and checks out those layers.
+
+A new machine or CI job can then run `./setup-layers` to get all the layers at the recorded revisions. It doesn't create the build directory or configs, so you still run `oe-init-build-env` afterwards.
+
+**Good times to run it**
+- After you've added the layers you need (poky, meta-openembedded, meta-raspberrypi, your own) and confirmed a build works.
+- Before a release or handoff, so an image can be traced to exact metadata.
+- Whenever you update layer revisions and want to refresh the pinned set.
+
+**Caveats**
+- Layers must be git checkouts with a remote. A layer with no remote or with uncommitted local changes can't be captured faithfully, and you'll get warnings. Push or commit your own layer first.
+- You commit the output to a config repo. Your own `meta-myproject` is normally tracked there as one of the layers.
+- It only pins layers, not `local.conf` settings, so keep those in your layer, in a `TEMPLATECONF`, or in the config repo alongside the output.
+
+**When to skip it**
+
+If you're using `kas`, you don't need it: the kas YAML already pins repos and revisions and also sets machine, distro, and `local.conf` options, so it covers the same ground and more. `create-layers-setup` is the choice if you'd rather stay with plain BitBake tooling and not add a dependency.
+
+# What does 'meta' mean?
+
+In Yocto, "meta" is short for **metadata**: the instructions that describe how to build software, as opposed to the software itself.
+
+**Two kinds of content**
+- **Source code** is what gets built: the Linux kernel, busybox, your application.
+- **Metadata** is everything that tells BitBake how to build it: recipes (`.bb`), bbappends, classes (`.bbclass`), and configuration (`.conf`, `.inc`). It covers where to fetch sources, what patches to apply, what depends on what, and how to configure, compile, and package.
+
+The prefix comes from the Greek "beyond" or "about", the same sense as in "metadata" (data about data). The metadata is information about how to produce software.
+
+**Where you see it**
+- **`meta-*` layer names** are a convention meaning "a layer of metadata": `meta-openembedded`, `meta-raspberrypi`, `meta-myproject`. The prefix isn't required, but nearly everyone follows it, and `bitbake-layers create-layer` sets it up that way.
+- **`poky/meta`** is the OpenEmbedded-Core layer (often written OE-Core), the foundation with the core recipes and classes.
+- **`poky/meta-poky`** holds the Poky distribution policy, and **`poky/meta-yocto-bsp`** holds reference hardware support (BSP is "board support package").
+- **`poky/bitbake`** is the build engine, not metadata. It's the tool that parses the metadata and runs the tasks.
+
+So when the primer said "you describe what you want in metadata", that means writing recipes and config files in layers, which BitBake then turns into a bootloader, kernel, and root filesystem.
