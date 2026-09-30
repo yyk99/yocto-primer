@@ -8,5 +8,5 @@ Targets:
     linuxfb-demo      just the Qt6 sample app
 
 Run the image with:
-    runqemu qemuarm64 linuxfb-image slirp           (SDL window)
-    runqemu qemuarm64 linuxfb-image slirp publicvnc (VNC on :0, port 5900)
+    runqemu linuxfb-image slirp           (SDL window)
+    runqemu linuxfb-image slirp publicvnc (VNC on :0, port 5900)

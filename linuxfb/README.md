@@ -92,8 +92,15 @@ To build just the app (e.g. while editing `main.cpp`): `bitbake linuxfb-demo`.
 ## Run
 
 ```bash
-runqemu qemuarm64 linuxfb-image slirp
+runqemu linuxfb-image slirp
 ```
+
+- **Don't pass the machine name** (`runqemu qemuarm64 linuxfb-image`). It
+  fails with `IMAGE_LINK_NAME wasn't set to find corresponding
+  .qemuboot.conf file`. With an explicit machine, scarthgap's runqemu runs
+  `bitbake -e` without the image as target and caches that result, so it
+  never learns the image's file name. `MACHINE` comes from `local.conf`
+  anyway.
 
 - `slirp` uses user-mode networking, so `runqemu` doesn't need `sudo` to set
   up a tap device.
