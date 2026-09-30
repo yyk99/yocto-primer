@@ -91,10 +91,23 @@ To build just the app (e.g. while editing `main.cpp`): `bitbake linuxfb-demo`.
 
 ## Run
 
+### Recommended: VNC display, serial console in the terminal
+
 ```bash
-runqemu linuxfb-image slirp
+runqemu linuxfb-image slirp nographic publicvnc
 ```
 
+Then point a VNC viewer at `<build-host>:5900` (display `:0`).
+
+- **`publicvnc`** makes QEMU serve the VM's screen over VNC on port 5900.
+  This works the same on a local desktop, over SSH, or in a Codespace, and
+  avoids the quirks of an SDL window over X11 forwarding (see below).
+- **`nographic`** keeps the serial console in the terminal you ran `runqemu`
+  from. You get boot messages and a `root` login there, with no extra window.
+  The VM still has its virtio-gpu, so the app still draws to `/dev/fb0` and
+  shows up over VNC.
+- **`slirp`** uses user-mode networking, so `runqemu` doesn't need `sudo` to
+  set up a tap device.
 - **Don't pass the machine name** (`runqemu qemuarm64 linuxfb-image`). It
   fails with `IMAGE_LINK_NAME wasn't set to find corresponding
   .qemuboot.conf file`. With an explicit machine, scarthgap's runqemu runs
@@ -102,18 +115,65 @@ runqemu linuxfb-image slirp
   never learns the image's file name. `MACHINE` comes from `local.conf`
   anyway.
 
-- `slirp` uses user-mode networking, so `runqemu` doesn't need `sudo` to set
-  up a tap device.
-- QEMU opens an SDL window. Once boot finishes, the demo fills it: Qt
-  version, the platform (`linuxfb`) and screen size, a ticking clock and a
-  click counter. The mouse and keyboard work through QEMU's USB tablet and
-  keyboard, which Qt reads via libinput.
-- Log in as `root` with no password on the serial console (the terminal you
-  ran `runqemu` from). The app is controlled with
-  `/etc/init.d/linuxfb-demo {start|stop|restart}`.
-- **No local display** (SSH session, Codespace): add `publicvnc` for a VNC
-  server on port 5900, or `nographic` for serial only. `publicvnc` pairs with
-  `codespace-qt/scripts/novnc-bridge.sh 0` to reach it from a browser.
+Once boot finishes, the demo fills the screen: Qt version, the platform
+(`linuxfb`) and screen size (1280x800), a ticking clock and a click counter.
+The mouse and keyboard work through QEMU's USB tablet and keyboard, which Qt
+reads via libinput. The app is controlled from the serial console with
+`/etc/init.d/linuxfb-demo {start|stop|restart}`.
+
+**VNC notes:**
+- **No password:** the VNC server listens on all interfaces. Use it only
+  on a trusted network, or tunnel it:
+  `ssh -L 5900:localhost:5900 <build-host>`, then connect the viewer to
+  `localhost:5900`.
+- **One VM per host:** the port is fixed at 5900, so a second
+  `publicvnc` VM on the same host fails to start.
+- **Browser access:** pair it with `codespace-qt/scripts/novnc-bridge.sh 0`
+  to reach it from a browser (e.g. in a Codespace).
+
+### Serial console keys (`nographic`)
+
+The terminal is shared between the VM's serial port and the QEMU monitor.
+The escape key is **Ctrl+A**:
+
+| Keys             | Action                                          |
+|------------------|-------------------------------------------------|
+| Ctrl+A, then X   | quit QEMU immediately (like pulling the plug)   |
+| Ctrl+A, then C   | switch between the serial console and the QEMU monitor (`(qemu)` prompt) |
+| Ctrl+A, then H   | list these keys                                 |
+| Ctrl+A, then A   | send a literal Ctrl+A to the VM                 |
+
+For a clean shutdown, run `poweroff` in the VM instead.
+
+### SDL window (local desktop)
+
+```bash
+runqemu linuxfb-image slirp
+```
+
+With no display option, runqemu opens an SDL window for the VM's screen.
+The serial console goes to a second, hidden SDL window, not the terminal.
+The hotkeys use the **left** Ctrl and Alt keys:
+
+| Keys           | Action                                               |
+|----------------|------------------------------------------------------|
+| Ctrl+Alt+2     | show/hide the serial console window (boot log, `root` login) |
+| Ctrl+Alt+G     | grab/release mouse and keyboard; the title bar says when they are grabbed |
+| Ctrl+Alt+F     | toggle fullscreen                                    |
+| Ctrl+Alt+U     | restore the window to the VM's screen size           |
+
+- **Mouse:** the VM uses an absolute USB tablet, so the pointer normally
+  moves in and out of the window without being grabbed. If input does get
+  captured, Ctrl+Alt+G releases it.
+- **Ctrl+Alt+1 does nothing:** the display window is always open.
+- **Quitting:** close the display window, run `poweroff` on the serial
+  console, or open the monitor (Ctrl+A, then C in the serial window) and
+  type `quit`.
+- **"Display output is not active":** over SSH X11 forwarding (`ssh -X`),
+  the display window can show this message on a black screen even though
+  the app is running. Restarting the app from the serial console
+  (`/etc/init.d/linuxfb-demo restart`) may bring the screen back. When
+  working remotely, prefer the VNC mode above.
 
 ## How the pieces fit
 
