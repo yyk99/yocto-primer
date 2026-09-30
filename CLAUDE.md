@@ -13,6 +13,33 @@ Guidance for Claude Code when working in this repository.
   a GitHub Codespace (a headless container: no physical display, no GPU).
   `codespace-qt/README.md` has the full writeup; below are gotchas from
   building it that aren't obvious from just reading the scripts.
+- `linuxfb/` - Yocto build of a `qemuarm64` image running a Qt6 Widgets
+  app on `/dev/fb0` via Qt's `linuxfb` plugin. Layer `meta-linuxfb/`
+  (app, image, TEMPLATECONF) plus pinned poky/meta-openembedded
+  (`scarthgap`) and meta-qt6 (`6.11`). `linuxfb/README.md` has the steps.
+
+## linuxfb gotchas
+
+- **`linuxfb/setup-layers.json` is hand-maintained,** unlike ch01's.
+  `create-layers-setup` would also record this repo itself as a source, so
+  bump `rev`/`describe` by hand. meta-qt6 branches must list `scarthgap` in
+  `LAYERSERIES_COMPAT_qt6-layer`. Its `lts-6.8` branch now tracks
+  commercial-only Qt releases (6.8.5+); stick to open-source branches.
+- **The build config comes from `TEMPLATECONF`,** not poky's
+  `./setup-build`: `setup-build` only scans layers that `setup-layers`
+  checked out, so it never lists `meta-linuxfb`'s template.
+- **linuxfb is selected by removing distro features, not by a bbappend.**
+  `DISTRO_FEATURES:remove = "x11 wayland opengl vulkan ptest"` makes
+  meta-qt6's qtbase pick `no-opengl` and `QT_QPA_DEFAULT_PLATFORM =
+  "linuxfb"`, and keeps mesa out. Adding any of those features back changes
+  the default platform.
+- **No kernel changes are needed for `/dev/fb0`:** linux-yocto's qemu
+  config enables `DRM_VIRTIO_GPU` + `DRM_FBDEV_EMULATION`, and runqemu gives
+  `qemuarm64` a `virtio-gpu-pci`.
+- **Checking BitBake on the dev host (Ubuntu 24.04):** real builds need the
+  AppArmor userns fix from `linuxfb/README.md`. For a parse-only check
+  without root, `bitbake -R <file with INHERIT:remove = "sanity"> -p` works
+  (a missing host tool can be stubbed on `PATH` for the parse).
 
 ## ch01 gotchas
 
