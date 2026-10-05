@@ -175,6 +175,73 @@ The hotkeys use the **left** Ctrl and Alt keys:
   (`/etc/init.d/linuxfb-demo restart`) may bring the screen back. When
   working remotely, prefer the VNC mode above.
 
+### In a GitHub Codespace (SDL window on the desktop-lite desktop)
+
+This uses the `codespace-qt` dev container. Its `desktop-lite` feature runs
+an X desktop in the container, which you open in the browser through noVNC
+on port 6080. Setup is in `codespace-qt/README.md`, Option 3. QEMU's SDL
+window then opens on that desktop.
+
+**Build elsewhere, run in the Codespace.** A full build needs 35-45 GB and
+hours, too much for most Codespace machine types. Build on a Linux host as
+above, then copy only the kernel and root filesystem into the Codespace.
+`runqemu` isn't needed there; plain `qemu-system-aarch64` is enough.
+
+1. **On the build host,** stage the two files (`cp -L` copies the real files
+   behind the deploy symlinks) and copy them to the Codespace's home
+   directory with the GitHub CLI:
+
+   ```bash
+   D=build/tmp/deploy/images/qemuarm64
+   mkdir -p linuxfb-image
+   cp -L $D/Image-qemuarm64.bin $D/linuxfb-image-qemuarm64.rootfs.ext4 linuxfb-image/
+   gh codespace cp -r linuxfb-image remote:    # asks which Codespace; or pass -c <name>
+   ```
+
+   The rootfs is about 300 MB. The staging directory is only for the copy,
+   so delete it afterwards.
+
+2. **In the Codespace,** install the ARM system emulator and QEMU's SDL/GTK
+   display modules. The dev container only preinstalls `qemu-system-x86`.
+
+   ```bash
+   sudo apt-get update && sudo apt-get install -y qemu-system-arm qemu-system-gui
+   ```
+
+3. **In a terminal inside the noVNC desktop** (where `DISPLAY` is set), boot
+   the image:
+
+   ```bash
+   cd ~/linuxfb-image
+   qemu-system-aarch64 -machine virt -cpu cortex-a57 -smp 4 -m 256 \
+       -kernel Image-qemuarm64.bin \
+       -drive file=linuxfb-image-qemuarm64.rootfs.ext4,if=virtio,format=raw \
+       -append "root=/dev/vda rw" \
+       -device virtio-gpu-pci -device qemu-xhci -device usb-tablet -device usb-kbd \
+       -netdev user,id=net0 -device virtio-net-pci,netdev=net0 \
+       -serial mon:vc -display sdl,show-cursor=on
+   ```
+
+   This is the same machine that `runqemu` sets up, with the values taken
+   from the image's `.qemuboot.conf`. The SDL window shows the demo once
+   boot finishes, and the SDL keys above apply: Ctrl+Alt+2 shows the serial
+   console, and Ctrl+A, then C switches it to the QEMU monitor.
+
+Things to know:
+
+- **Why not `codespace-qt/scripts/run-core-image.sh`?** That script targets
+  `qemux86-64` images. It would miss this machine's `-machine virt` and its
+  display device (`qb_machine`/`qb_graphics` in `.qemuboot.conf`). It would
+  also add `-enable-kvm` whenever `/dev/kvm` exists, and KVM can't run an
+  ARM guest on an x86 Codespace.
+- **Emulation only:** with no KVM, the ARM CPU is emulated in software.
+  Expect boot to take a minute or so.
+- **No SDL?** Headless, or if the SDL module is missing, replace the last
+  line with `-serial mon:stdio -display none -vnc :1`. That serves the
+  screen on port 5901. To reach it from a browser, run
+  `codespace-qt/scripts/novnc-bridge.sh 1 6081` and forward port 6081.
+  Its default web port, 6080, is already taken by desktop-lite's noVNC.
+
 ## How the pieces fit
 
 - **Display.** runqemu gives `qemuarm64` a `virtio-gpu-pci` device.
