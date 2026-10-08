@@ -66,8 +66,10 @@ Guidance for Claude Code when working in this repository.
   `IMAGE_BOOT_FILES = "Image"` and `do_image_wic[depends]` on
   `virtual/kernel:do_deploy` (set in the machine conf / image recipe).
 - **`saveenv` failed with `Flash buffer write timeout`** with the defconfig's
-  `CONFIG_SYS_FLASH_USE_BUFFER_WRITE=y`; `primer.cfg` turns it off. Whether
-  that fixes it is not yet confirmed by a rebuild.
+  `CONFIG_SYS_FLASH_USE_BUFFER_WRITE=y`; `primer.cfg` turns it off, which
+  fixes it. Word-by-word writes are slow, though: `saveenv` takes about a
+  minute (256 KiB `CONFIG_ENV_SIZE`), and U-Boot prints nothing while it
+  writes.
 - **The build config comes from `TEMPLATECONF`,** as in `linuxfb/`, and
   `setup-layers.json` is hand-maintained (poky only). Pass `--destdir .`
   to `setup-layers`; `poky/`, `build/`, `.oe-layers.json` and `setup-build`

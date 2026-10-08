@@ -171,7 +171,9 @@ setenv bootargs 'root=/dev/vda2 rw console=ttyAMA0'
 boot
 ```
 
-Then `saveenv` writes the environment to flash bank 1, and the values are
+Then `saveenv` writes the environment to flash bank 1. It takes about a
+minute and prints nothing while it writes (QEMU's flash is programmed word by
+word), so wait for the prompt. The values are
 still there after `reset`, and across `run-qemu.sh` runs. Undo it with
 `env default -a; saveenv`, or start with `RESET_ENV=1`. To bake values into
 the build instead, see exercise 7.
@@ -278,6 +280,8 @@ become the patch files.
 - **`saveenv` says `Flash buffer write timeout`.** `primer.cfg` turns off
   `CONFIG_SYS_FLASH_USE_BUFFER_WRITE` for this; rebuild `u-boot` if you have
   an older build.
+- **`saveenv` seems to hang after `Writing to Flash...`.** It is writing
+  256 KiB one word at a time, which takes about a minute. Wait for `done`.
 - **`Unknown command 'xyz'`.** The command is not compiled into this U-Boot;
   enable its `CONFIG_CMD_*` in `primer.cfg` (exercise 7).
 - **The kernel is skipped as incompatible, or `do_kernel_metadata` says
