@@ -17,6 +17,11 @@ Guidance for Claude Code when working in this repository.
   app on `/dev/fb0` via Qt's `linuxfb` plugin. Layer `meta-linuxfb/`
   (app, image, TEMPLATECONF) plus pinned poky/meta-openembedded
   (`scarthgap`) and meta-qt6 (`6.11`). `linuxfb/README.md` has the steps.
+- `u-boot-primer/` - hands-on U-Boot in QEMU, built with Yocto: a
+  `qemuarm64-uboot` machine where QEMU `virt` runs poky's U-Boot
+  (`qemu_arm64_defconfig`) from emulated NOR flash, and U-Boot loads the
+  kernel from the flash or from a wic disk. Layer `meta-uboot/` plus pinned
+  poky (`scarthgap`). `u-boot-primer/README.md` has the steps and exercises.
 
 ## linuxfb gotchas
 
@@ -40,11 +45,6 @@ Guidance for Claude Code when working in this repository.
   AppArmor userns fix from `linuxfb/README.md`. For a parse-only check
   without root, `bitbake -R <file with INHERIT:remove = "sanity"> -p` works
   (a missing host tool can be stubbed on `PATH` for the parse).
-- `u-boot-primer/` - hands-on U-Boot in QEMU, built with Yocto: a
-  `qemuarm64-uboot` machine where QEMU `virt` runs poky's U-Boot
-  (`qemu_arm64_defconfig`) as the firmware and U-Boot loads the kernel from
-  a wic disk. Layer `meta-uboot/` plus pinned poky (`scarthgap`).
-  `u-boot-primer/README.md` has the steps and exercises.
 
 ## u-boot-primer gotchas
 
