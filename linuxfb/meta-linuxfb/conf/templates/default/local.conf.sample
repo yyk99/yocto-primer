@@ -1,0 +1,44 @@
+# local.conf for the linuxfb build (Qt6 on the Linux framebuffer, qemuarm64).
+# Generated from meta-linuxfb/conf/templates/default/local.conf.sample by
+# oe-init-build-env; edit that file to change the defaults for new build dirs.
+
+MACHINE ??= "qemuarm64"
+DISTRO ?= "poky"
+
+# Framebuffer only: no X11, Wayland, OpenGL or Vulkan. Besides keeping mesa
+# and the compositors out of the build, this makes qtbase fall back to
+# QT_QPA_DEFAULT_PLATFORM = "linuxfb" with no-opengl. ptest is dropped too,
+# so recipes don't build test suites the image never installs.
+DISTRO_FEATURES:remove = "x11 wayland opengl vulkan ptest"
+
+# Share downloads and sstate between build dirs (and with other checkouts)
+# by pointing these somewhere outside build/, e.g.:
+#DL_DIR ?= "${HOME}/yocto-cache/downloads"
+#SSTATE_DIR ?= "${HOME}/yocto-cache/sstate-cache"
+
+# Delete each recipe's work dir once it is built. Qt makes work dirs large;
+# without this a build needs a lot more disk.
+INHERIT += "rm_work"
+
+# Root login with no password, handy for a QEMU image. Not for production.
+EXTRA_IMAGE_FEATURES ?= "debug-tweaks"
+
+PACKAGE_CLASSES ?= "package_ipk"
+USER_CLASSES ?= "buildstats"
+PATCHRESOLVE = "noop"
+
+BB_DISKMON_DIRS ??= "\
+    STOPTASKS,${TMPDIR},1G,100K \
+    STOPTASKS,${DL_DIR},1G,100K \
+    STOPTASKS,${SSTATE_DIR},1G,100K \
+    STOPTASKS,/tmp,100M,100K \
+    HALT,${TMPDIR},100M,1K \
+    HALT,${DL_DIR},100M,1K \
+    HALT,${SSTATE_DIR},100M,1K \
+    HALT,/tmp,10M,1K"
+
+# Build runqemu's qemu-system-native with SDL so it can open a graphical
+# window (same as poky's default local.conf).
+PACKAGECONFIG:append:pn-qemu-system-native = " sdl"
+
+CONF_VERSION = "2"

@@ -1,0 +1,42 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          linuxfb-demo
+# Required-Start:    $local_fs
+# Required-Stop:     $local_fs
+# Default-Start:     5
+# Default-Stop:      0 1 6
+# Short-Description: Qt6 linuxfb demo on /dev/fb0
+### END INIT INFO
+
+NAME=linuxfb-demo
+DAEMON=/usr/bin/linuxfb-demo
+PIDFILE=/var/run/$NAME.pid
+
+# Draw straight to the framebuffer; the linuxfb plugin also switches the
+# console to graphics mode so the fbcon text and cursor don't overdraw it.
+export QT_QPA_PLATFORM=linuxfb:fb=/dev/fb0
+export XDG_RUNTIME_DIR=/run/user/0
+
+case "$1" in
+start)
+    mkdir -p -m 0700 "$XDG_RUNTIME_DIR"
+    echo "Starting $NAME"
+    start-stop-daemon -S -b -m -p "$PIDFILE" -x "$DAEMON"
+    ;;
+stop)
+    echo "Stopping $NAME"
+    start-stop-daemon -K -p "$PIDFILE" -x "$DAEMON"
+    rm -f "$PIDFILE"
+    ;;
+restart)
+    "$0" stop
+    sleep 1
+    "$0" start
+    ;;
+*)
+    echo "Usage: $0 {start|stop|restart}"
+    exit 1
+    ;;
+esac
+
+exit 0

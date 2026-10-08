@@ -1,0 +1,9 @@
+# Upstream layers, checked out by ./setup-layers
+poky/
+meta-openembedded/
+meta-qt6/
+# Also written by ./setup-layers
+.oe-layers.json
+setup-build
+# Build directory (tmp/, and downloads/ + sstate-cache/ unless moved out)
+build/

@@ -1,0 +1,12 @@
+
+### Shell environment set up for the linuxfb build. ###
+
+You can now run 'bitbake <target>'
+
+Targets:
+    linuxfb-image     qemuarm64 image that starts linuxfb-demo on /dev/fb0
+    linuxfb-demo      just the Qt6 sample app
+
+Run the image with:
+    runqemu linuxfb-image slirp nographic publicvnc  (VNC on port 5900, serial here)
+    runqemu linuxfb-image slirp                      (SDL window)
