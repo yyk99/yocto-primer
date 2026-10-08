@@ -1,0 +1,7 @@
+# Upstream layer, checked out by ./setup-layers
+poky/
+# Also written by ./setup-layers
+.oe-layers.json
+setup-build
+# Build directory (tmp/, and downloads/ + sstate-cache/ unless moved out)
+build/

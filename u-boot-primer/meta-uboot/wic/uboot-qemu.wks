@@ -1,0 +1,7 @@
+# Disk layout for the qemuarm64-uboot machine, seen by U-Boot as virtio 0:
+#   virtio 0:1  FAT   /boot  kernel Image (IMAGE_BOOT_FILES)
+#   virtio 0:2  ext4  /      root filesystem
+part /boot --source bootimg-partition --fstype=vfat --label boot --active --align 4096 --size 64M
+part / --source rootfs --fstype=ext4 --label root --align 4096
+
+bootloader --ptable msdos

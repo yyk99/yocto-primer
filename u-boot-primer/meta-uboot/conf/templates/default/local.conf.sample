@@ -1,0 +1,35 @@
+# local.conf for the U-Boot primer build (qemuarm64 booted through U-Boot).
+# Generated from meta-uboot/conf/templates/default/local.conf.sample by
+# oe-init-build-env; edit that file to change the defaults for new build dirs.
+
+MACHINE ??= "qemuarm64-uboot"
+DISTRO ?= "poky"
+
+# Share downloads and sstate between build dirs (and with other checkouts)
+# by pointing these somewhere outside build/, e.g.:
+#DL_DIR ?= "${HOME}/yocto-cache/downloads"
+#SSTATE_DIR ?= "${HOME}/yocto-cache/sstate-cache"
+
+# Delete each recipe's work dir once it is built. Keep this off while you
+# hack on u-boot and want to look at tmp/work/.../u-boot/.
+INHERIT += "rm_work"
+RM_WORK_EXCLUDE += "u-boot"
+
+# Root login with no password, handy for a QEMU image. Not for production.
+EXTRA_IMAGE_FEATURES ?= "debug-tweaks"
+
+PACKAGE_CLASSES ?= "package_ipk"
+USER_CLASSES ?= "buildstats"
+PATCHRESOLVE = "noop"
+
+BB_DISKMON_DIRS ??= "\
+    STOPTASKS,${TMPDIR},1G,100K \
+    STOPTASKS,${DL_DIR},1G,100K \
+    STOPTASKS,${SSTATE_DIR},1G,100K \
+    STOPTASKS,/tmp,100M,100K \
+    HALT,${TMPDIR},100M,1K \
+    HALT,${DL_DIR},100M,1K \
+    HALT,${SSTATE_DIR},100M,1K \
+    HALT,/tmp,10M,1K"
+
+CONF_VERSION = "2"

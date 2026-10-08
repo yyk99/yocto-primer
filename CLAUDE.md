@@ -40,6 +40,38 @@ Guidance for Claude Code when working in this repository.
   AppArmor userns fix from `linuxfb/README.md`. For a parse-only check
   without root, `bitbake -R <file with INHERIT:remove = "sanity"> -p` works
   (a missing host tool can be stubbed on `PATH` for the parse).
+- `u-boot-primer/` - hands-on U-Boot in QEMU, built with Yocto: a
+  `qemuarm64-uboot` machine where QEMU `virt` runs poky's U-Boot
+  (`qemu_arm64_defconfig`) as the firmware and U-Boot loads the kernel from
+  a wic disk. Layer `meta-uboot/` plus pinned poky (`scarthgap`).
+  `u-boot-primer/README.md` has the steps and exercises.
+
+## u-boot-primer gotchas
+
+- **The machine reuses qemuarm64's kernel by override and `KMACHINE`.**
+  `qemuarm64-uboot` sets `MACHINEOVERRIDES =. "qemuarm64:"` (without it
+  `linux-yocto` is skipped: `COMPATIBLE_MACHINE`, `KBRANCH` and
+  `SRCREV_machine` are keyed on it) and `KMACHINE = "qemuarm64"` (it defaults
+  to `${MACHINE}`, and `do_kernel_metadata` fails with "Could not locate BSP
+  definition for qemuarm64-uboot/standard").
+- **U-Boot runs from emulated NOR flash, not `-bios`/`-kernel`.**
+  `run-qemu.sh` builds `build/flash/flash0.img` (u-boot.bin at 0, kernel at
+  `0x400000`) and `flash1.img` and attaches them as `if=pflash` units 0 and
+  1. The defconfig already has `CONFIG_ENV_IS_IN_FLASH` with
+  `CONFIG_ENV_ADDR=0x4000000` (bank 1), so `saveenv` works once bank 1
+  exists. Pass `snapshot=off` per pflash drive (the disk uses `snapshot=on`)
+  or QEMU would drop the flash writes. Each bank must be padded to the full
+  64 MiB, with 0xff, the erased state.
+- **The wic disk still carries the kernel** (FAT partition), so the wic needs
+  `IMAGE_BOOT_FILES = "Image"` and `do_image_wic[depends]` on
+  `virtual/kernel:do_deploy` (set in the machine conf / image recipe).
+- **`saveenv` failed with `Flash buffer write timeout`** with the defconfig's
+  `CONFIG_SYS_FLASH_USE_BUFFER_WRITE=y`; `primer.cfg` turns it off. Whether
+  that fixes it is not yet confirmed by a rebuild.
+- **The build config comes from `TEMPLATECONF`,** as in `linuxfb/`, and
+  `setup-layers.json` is hand-maintained (poky only). Pass `--destdir .`
+  to `setup-layers`; `poky/`, `build/`, `.oe-layers.json` and `setup-build`
+  are gitignored.
 
 ## ch01 gotchas
 

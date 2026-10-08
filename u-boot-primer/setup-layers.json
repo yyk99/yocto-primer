@@ -1,0 +1,18 @@
+{
+    "sources": {
+        "poky": {
+            "git-remote": {
+                "branch": "scarthgap",
+                "describe": "yocto-5.0.20-156-g3a3d07f625",
+                "remotes": {
+                    "origin": {
+                        "uri": "https://git.yoctoproject.org/poky"
+                    }
+                },
+                "rev": "3a3d07f625aee7b87ea1026526b756447c357652"
+            },
+            "path": "poky"
+        }
+    },
+    "version": "1.0"
+}
