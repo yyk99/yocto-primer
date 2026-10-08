@@ -59,17 +59,29 @@ Guidance for Claude Code when working in this repository.
   `0x400000`) and `flash1.img` and attaches them as `if=pflash` units 0 and
   1. The defconfig already has `CONFIG_ENV_IS_IN_FLASH` with
   `CONFIG_ENV_ADDR=0x4000000` (bank 1), so `saveenv` works once bank 1
-  exists. Pass `snapshot=off` per pflash drive (the disk uses `snapshot=on`)
-  or QEMU would drop the flash writes. Each bank must be padded to the full
-  64 MiB, with 0xff, the erased state.
+  exists. Pass `snapshot=off` per pflash drive (the disk uses
+  `snapshot=on`) or QEMU would drop the flash writes. Each bank must be
+  padded to the full 64 MiB, with 0xff, the erased state.
+- **Bank 1 also holds a JFFS2 image at `0x04100000`,** built by `mkfs.jffs2`
+  (from `bitbake mtd-utils-native`) from `u-boot-primer/jffs2-root/` when
+  `flash1.img` is created; `RESET_ENV=1` recreates it. `mkfs.jffs2 -e` must
+  match the flash erase block (`0x40000`), and `-n` (no cleanmarkers) is for
+  NOR. U-Boot's JFFS2 commands are `fsinfo`/`fsls`/`fsload` after
+  `chpart`; plain `ls` is the generic fs command and rejects JFFS2.
+  The partition setup needs `mtdids` and `mtdparts` in the environment.
+- **U-Boot needs `CONFIG_SYS_FLASH_CFI_WIDTH_32BIT`** (in `primer.cfg`).
+  QEMU's flash is two x16 chips interleaved on a 32-bit bus; the defconfig
+  probes ports upward from 8 bits, settles on 16 and sees only 32 MB per
+  bank with 128 KiB sectors. At 32 bits `flinfo` shows 64 MB in 256 sectors
+  of 256 KiB.
 - **The wic disk still carries the kernel** (FAT partition), so the wic needs
   `IMAGE_BOOT_FILES = "Image"` and `do_image_wic[depends]` on
   `virtual/kernel:do_deploy` (set in the machine conf / image recipe).
 - **`saveenv` failed with `Flash buffer write timeout`** with the defconfig's
-  `CONFIG_SYS_FLASH_USE_BUFFER_WRITE=y`; `primer.cfg` turns it off, which
-  fixes it. Word-by-word writes are slow, though: `saveenv` takes about a
-  minute (256 KiB `CONFIG_ENV_SIZE`), and U-Boot prints nothing while it
-  writes.
+  `CONFIG_SYS_FLASH_USE_BUFFER_WRITE=y`, at both 16 and 32 bit port widths;
+  `primer.cfg` turns it off, which fixes it. Word-by-word writes are slow,
+  though: `saveenv` takes about 30 seconds (256 KiB `CONFIG_ENV_SIZE`), and
+  U-Boot prints nothing while it writes.
 - **The build config comes from `TEMPLATECONF`,** as in `linuxfb/`, and
   `setup-layers.json` is hand-maintained (poky only). Pass `--destdir .`
   to `setup-layers`; `poky/`, `build/`, `.oe-layers.json` and `setup-build`

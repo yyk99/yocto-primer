@@ -7,12 +7,19 @@
 #   QEMU       qemu-system-aarch64 to use (default: host one, else the one
 #              `bitbake qemu-system-native` built under BUILDDIR)
 #   PERSIST=1  write changes to the disk image (default: discarded on exit)
-#   RESET_ENV=1  erase the saved U-Boot environment (flash1.img)
+#   RESET_ENV=1  recreate flash1.img (environment and JFFS2 contents)
 #
-# Flash layout (QEMU 'virt' has two 64 MiB CFI NOR banks):
+# Flash layout (QEMU 'virt' has two 64 MiB CFI NOR banks, 256 KiB sectors):
 #   flash0  0x00000000  u-boot.bin       (rebuilt from the deploy dir every run)
 #           0x00400000  kernel Image     (if built)
-#   flash1  0x04000000  U-Boot environment; `saveenv` persists in flash1.img
+#   flash1  0x04000000  U-Boot environment (1 MiB); `saveenv` persists here
+#           0x04100000  JFFS2 filesystem, filled from jffs2-root/ when
+#                       flash1.img is created (needs mkfs.jffs2; see below)
+#
+# flash1.img is created once and kept, so changes made in the guest persist.
+# RESET_ENV=1 recreates it, discarding the saved environment and JFFS2 data.
+# mkfs.jffs2 comes from the host (apt install mtd-utils) or from
+# `bitbake mtd-utils-native`.
 #
 # Quit QEMU with Ctrl-a x.
 set -euo pipefail
@@ -25,6 +32,8 @@ flashdir=$build/flash
 
 flash_size=$((64 * 1024 * 1024))
 kernel_offset=$((4 * 1024 * 1024))
+jffs2_offset=$((1024 * 1024))
+jffs2_eraseblock=0x40000
 
 qemu=${QEMU:-$(command -v qemu-system-aarch64 || true)}
 if [ -z "$qemu" ]; then
@@ -66,7 +75,18 @@ pad_to_flash "$flash0"
 
 flash1=$flashdir/flash1.img
 if [ ! -f "$flash1" ] || [ "${RESET_ENV:-0}" = 1 ]; then
-    : > "$flash1"
+    mkfs=$(command -v mkfs.jffs2 || find "$build/tmp/sysroots-components" \
+           -name mkfs.jffs2 -type f 2>/dev/null | head -n1 || true)
+    if [ -n "$mkfs" ] && [ -d "$top/jffs2-root" ]; then
+        # -n: no cleanmarkers (NOR), -l: little endian, -e: erase block size
+        "$mkfs" -d "$top/jffs2-root" -e "$jffs2_eraseblock" -l -n -o "$flashdir/jffs2.img"
+        { head -c "$jffs2_offset" /dev/zero | tr '\0' '\377'
+          cat "$flashdir/jffs2.img"; } > "$flash1"
+        echo "flash1: created, JFFS2 ($(stat -c %s "$flashdir/jffs2.img") bytes) at 0x$(printf %x "$jffs2_offset")"
+    else
+        : > "$flash1"
+        echo "flash1: created without JFFS2 (no mkfs.jffs2: bitbake mtd-utils-native)"
+    fi
     pad_to_flash "$flash1"
 fi
 

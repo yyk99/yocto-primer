@@ -3,8 +3,8 @@
 A Yocto build of a small `qemuarm64` (aarch64) system where **U-Boot is the
 firmware**. QEMU's `virt` board runs U-Boot straight out of emulated **NOR
 flash**, like a real SoC board, and U-Boot loads the Linux kernel from the
-flash or from a FAT partition on a virtual disk. Its environment is saved in a
-second flash bank. You get a real U-Boot prompt to poke at, and a build you can
+flash or from a FAT partition on a virtual disk. Its environment and a small
+JFFS2 filesystem live in a second flash bank. You get a real U-Boot prompt to poke at, and a build you can
 change and re-run in minutes.
 
 | Layer      | Branch      | Why                                          |
@@ -20,6 +20,7 @@ The exact poky revision is pinned in `setup-layers.json`.
 u-boot-primer/
 ├── setup-layers, setup-layers.json    check out the pinned poky
 ├── scripts/run-qemu.sh                boot U-Boot + the disk image in QEMU
+├── jffs2-root/                        files packed into the JFFS2 image in flash
 └── meta-uboot/
     ├── conf/layer.conf
     ├── conf/machine/qemuarm64-uboot.conf   qemuarm64 + U-Boot + wic disk
@@ -41,8 +42,13 @@ u-boot-primer/
   `run-qemu.sh` builds `build/flash/flash0.img` with `u-boot.bin` at the start
   (the CPU starts at address 0, so this is where U-Boot runs from) and the
   kernel at `0x400000`. Bank 1 (`flash1.img`, mapped at `0x04000000`) holds the
-  U-Boot environment: `qemu_arm64_defconfig` sets `CONFIG_ENV_IS_IN_FLASH` with
-  `CONFIG_ENV_ADDR=0x4000000`, so `saveenv` survives a restart.
+  U-Boot environment in its first 1 MiB: `qemu_arm64_defconfig` sets
+  `CONFIG_ENV_IS_IN_FLASH` with `CONFIG_ENV_ADDR=0x4000000`, so `saveenv`
+  survives a restart. A JFFS2 filesystem, built from `jffs2-root/`, starts at
+  `0x04100000`. Each bank is 64 MiB in 256 KiB erase sectors (the geometry
+  `mkfs.jffs2 -e 0x40000` must match). The two chips are interleaved on a
+  32-bit bus; `primer.cfg` sets `CONFIG_SYS_FLASH_CFI_WIDTH_32BIT` so U-Boot
+  sees the full 64 MiB (by default it probes 16 bits and sees 32 MB).
 - **Device tree.** QEMU generates a DTB describing the `virt` board and hands
   it to U-Boot; U-Boot's own copy is at `$fdtcontroladdr`. Nothing here builds
   a DTB.
@@ -112,9 +118,13 @@ The script uses a host `qemu-system-aarch64` if there is one, else the one
 `bitbake qemu-system-native` built. It regenerates `flash0.img` from the build
 every run, so a rebuilt U-Boot or kernel is picked up. The disk is a snapshot,
 so changes to it are discarded on exit; `PERSIST=1 scripts/run-qemu.sh` writes
-to the image. `flash1.img` (the saved environment) is kept between runs; erase
-it with `RESET_ENV=1 scripts/run-qemu.sh`. It also works with only
-`bitbake u-boot` built, with no kernel or disk. Quit QEMU with `Ctrl-a x`.
+to the image. `flash1.img` (the saved environment and the JFFS2 data) is kept
+between runs; recreate it, discarding both, with
+`RESET_ENV=1 scripts/run-qemu.sh`. Building the JFFS2 image needs
+`mkfs.jffs2`: `bitbake mtd-utils-native` (or `sudo apt install mtd-utils`);
+without it `flash1.img` is created without a filesystem. The script also works
+with only `bitbake u-boot` built, with no kernel or disk. Quit QEMU with
+`Ctrl-a x`.
 
 You will see the banner, with `-primer` in the version string, and a 5 second
 `Hit any key to stop autoboot` countdown. The image has no `boot.scr` or
@@ -171,12 +181,12 @@ setenv bootargs 'root=/dev/vda2 rw console=ttyAMA0'
 boot
 ```
 
-Then `saveenv` writes the environment to flash bank 1. It takes about a
-minute and prints nothing while it writes (QEMU's flash is programmed word by
+Then `saveenv` writes the environment to flash bank 1. It takes about 30
+seconds and prints nothing while it writes (QEMU's flash is programmed word by
 word), so wait for the prompt. The values are
 still there after `reset`, and across `run-qemu.sh` runs. Undo it with
 `env default -a; saveenv`, or start with `RESET_ENV=1`. To bake values into
-the build instead, see exercise 7.
+the build instead, see exercise 8.
 
 ### 4. The NOR flash
 
@@ -187,15 +197,16 @@ cp.b 0x400000 ${kernel_addr_r} 0x2000000
 booti ${kernel_addr_r} - ${fdtcontroladdr}
 ```
 
-- `flinfo` shows the two flash banks, their sectors and which are protected
-  (`RO` is U-Boot itself, in the sectors it runs from).
+- `flinfo` shows the two flash banks (64 MB each, 256 sectors of 256 KiB) and
+  which sectors are protected (`RO` is U-Boot itself, in the sectors it runs
+  from).
 - The kernel is in flash at `0x400000`. `cp.b` copies it to RAM (32 MiB is
   more than its size), then `booti` boots it as before.
 - To program flash, erase a sector first (flash can only change 1 bits to 0):
 
 ```
-protect off 0x800000 +0x20000
-erase 0x800000 +0x20000
+protect off 0x800000 +0x40000
+erase 0x800000 +0x40000
 mw.l ${loadaddr} 0xcafef00d
 cp.b ${loadaddr} 0x800000 4
 md.l 0x800000 1
@@ -204,7 +215,38 @@ md.l 0x800000 1
   `flash0.img` is rebuilt from the build on every run, so this does not last
   (and, unlike the environment in bank 1, is meant not to).
 
-### 5. Memory and the device tree
+### 5. A JFFS2 filesystem in flash
+
+`run-qemu.sh` packs `jffs2-root/` into a JFFS2 image at `0x04100000` of
+bank 1 when it creates `flash1.img`. Tell U-Boot where it is, select it, and
+read it:
+
+```
+setenv mtdids nor1=nor1
+setenv mtdparts mtdparts=nor1:1m(env),-(jffs2)
+mtdparts
+chpart nor1,1
+fsinfo
+fsls
+fsls /notes
+fsload ${loadaddr} /hello.txt
+md.b ${loadaddr} 24
+```
+
+- `mtdids` names the flash device and `mtdparts` splits bank 1 into a 1 MiB
+  `env` partition (where `saveenv` writes) and a `jffs2` partition with the
+  rest. `chpart nor1,1` selects the second one.
+- The JFFS2 commands are `fsinfo`, `fsls` and `fsload`. (`ls` is the generic
+  filesystem command, which does not know JFFS2.)
+- Run `saveenv` after the two `setenv` lines to keep them across restarts.
+  The environment (bank 1, first 1 MiB) and the filesystem (from `0x04100000`)
+  don't overlap, so the files are still readable after `saveenv` and `reset`.
+- Change the files under `jffs2-root/`, then `RESET_ENV=1 scripts/run-qemu.sh`
+  to rebuild the image and see your files.
+- U-Boot's JFFS2 support is read-only. Writing to the filesystem needs Linux
+  with MTD and JFFS2 support, which this image's kernel does not have yet.
+
+### 6. Memory and the device tree
 
 ```
 md.l ${kernel_addr_r} 4              # dump 4 words of RAM
@@ -219,7 +261,7 @@ fdt print /chosen
 registers. After `booti`, compare `fdt print /chosen` before and after: U-Boot
 adds `bootargs` to the DTB it passes to the kernel.
 
-### 6. Networking
+### 7. Networking
 
 QEMU's user-mode network gives the guest `10.0.2.15` and a DHCP server:
 
@@ -234,7 +276,7 @@ TFTP itself: change the script's `-netdev user,id=net0` to
 `-netdev user,id=net0,tftp=/some/dir`, put a kernel `Image` in that dir, then
 `tftpboot ${kernel_addr_r} Image` and `booti` it.
 
-### 7. Change U-Boot's configuration and rebuild
+### 8. Change U-Boot's configuration and rebuild
 
 Edit `meta-uboot/recipes-bsp/u-boot/files/primer.cfg`, for example:
 
@@ -256,7 +298,7 @@ result to the u-boot work dir (the path is printed), and
 window. A config option that compiles in a command, such as `CONFIG_CMD_...`,
 shows up in `help` after the rebuild.
 
-### 8. Patch U-Boot's source
+### 9. Patch U-Boot's source
 
 `devtool` gives you a git checkout of the U-Boot source to edit:
 
@@ -281,9 +323,9 @@ become the patch files.
   `CONFIG_SYS_FLASH_USE_BUFFER_WRITE` for this; rebuild `u-boot` if you have
   an older build.
 - **`saveenv` seems to hang after `Writing to Flash...`.** It is writing
-  256 KiB one word at a time, which takes about a minute. Wait for `done`.
+  256 KiB one word at a time, which takes about 30 seconds. Wait for `done`.
 - **`Unknown command 'xyz'`.** The command is not compiled into this U-Boot;
-  enable its `CONFIG_CMD_*` in `primer.cfg` (exercise 7).
+  enable its `CONFIG_CMD_*` in `primer.cfg` (exercise 8).
 - **The kernel is skipped as incompatible, or `do_kernel_metadata` says
   `Could not locate BSP definition for qemuarm64-uboot/standard`.**
   `qemuarm64-uboot` must keep `MACHINEOVERRIDES =. "qemuarm64:"` and
