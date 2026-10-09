@@ -26,6 +26,7 @@ u-boot-primer/
     ├── conf/machine/qemuarm64-uboot.conf   qemuarm64 + U-Boot + wic disk
     ├── conf/templates/default/             TEMPLATECONF: local.conf + bblayers.conf
     ├── recipes-bsp/u-boot/                 bbappend + files/primer.cfg
+    ├── recipes-kernel/linux/               bbappend + files/mtd-jffs2.cfg (flash + JFFS2)
     ├── recipes-core/images/uboot-primer-image.bb
     └── wic/uboot-qemu.wks                  FAT /boot (kernel) + ext4 rootfs
 ```
@@ -186,7 +187,7 @@ seconds and prints nothing while it writes (QEMU's flash is programmed word by
 word), so wait for the prompt. The values are
 still there after `reset`, and across `run-qemu.sh` runs. Undo it with
 `env default -a; saveenv`, or start with `RESET_ENV=1`. To bake values into
-the build instead, see exercise 8.
+the build instead, see exercise 9.
 
 ### 4. The NOR flash
 
@@ -243,10 +244,59 @@ md.b ${loadaddr} 24
   don't overlap, so the files are still readable after `saveenv` and `reset`.
 - Change the files under `jffs2-root/`, then `RESET_ENV=1 scripts/run-qemu.sh`
   to rebuild the image and see your files.
-- U-Boot's JFFS2 support is read-only. Writing to the filesystem needs Linux
-  with MTD and JFFS2 support, which this image's kernel does not have yet.
+- U-Boot's JFFS2 support is read-only. To write to the filesystem, use Linux
+  (exercise 6).
 
-### 6. Memory and the device tree
+### 6. Use the flash from Linux
+
+The kernel has MTD, CFI flash and JFFS2 support (`files/mtd-jffs2.cfg`), and
+the image has `mtd-utils`. Boot it from flash with the flash partitions on the
+kernel command line:
+
+```
+cp.b 0x400000 ${kernel_addr_r} 0x2000000
+setenv bootargs "root=/dev/vda2 rw console=ttyAMA0 mtdparts=0.flash:64m(bank0),1m(env),-(jffs2)"
+booti ${kernel_addr_r} - ${fdtcontroladdr}
+```
+
+Then, as root in Linux:
+
+```
+cat /proc/mtd
+mkdir -p /mnt/jffs2
+mount -t jffs2 /dev/mtdblock2 /mnt/jffs2
+ls -lR /mnt/jffs2
+echo "written by Linux" > /mnt/jffs2/linux.txt
+sync
+umount /mnt/jffs2
+poweroff
+```
+
+Start QEMU again (keep `flash1.img`: no `RESET_ENV`) and look from U-Boot:
+
+```
+setenv mtdids nor1=nor1
+setenv mtdparts mtdparts=nor1:1m(env),-(jffs2)
+chpart nor1,1
+fsls
+fsload ${loadaddr} /linux.txt
+md.b ${loadaddr} 12
+```
+
+- The device tree has one `cfi-flash` node with two `reg` ranges, so Linux
+  probes both chips and concatenates them into one 128 MiB device named
+  `0.flash` (see the `dmesg` lines with `physmap-flash`). The `mtdparts=`
+  on the command line splits it the same way U-Boot did for bank 1: 64 MiB for
+  bank 0, 1 MiB environment, the rest JFFS2.
+- With these partitions `/proc/mtd` lists `mtd0` to `mtd2`, so the JFFS2
+  partition is `/dev/mtdblock2`. If you pick a device that does not exist,
+  `mount` fails with `Couldn't look up '/dev/mtdblockN'` and anything you
+  then write goes to the root filesystem instead of the flash.
+- The erase size Linux reports (`0x40000`) is the one `mkfs.jffs2 -e` used.
+- Try `flash_erase` and `flashcp` from `mtd-utils` on `/dev/mtd2`, then
+  `mount` it again and see what JFFS2 does with an erased partition.
+
+### 7. Memory and the device tree
 
 ```
 md.l ${kernel_addr_r} 4              # dump 4 words of RAM
@@ -261,7 +311,7 @@ fdt print /chosen
 registers. After `booti`, compare `fdt print /chosen` before and after: U-Boot
 adds `bootargs` to the DTB it passes to the kernel.
 
-### 7. Networking
+### 8. Networking
 
 QEMU's user-mode network gives the guest `10.0.2.15` and a DHCP server:
 
@@ -276,7 +326,7 @@ TFTP itself: change the script's `-netdev user,id=net0` to
 `-netdev user,id=net0,tftp=/some/dir`, put a kernel `Image` in that dir, then
 `tftpboot ${kernel_addr_r} Image` and `booti` it.
 
-### 8. Change U-Boot's configuration and rebuild
+### 9. Change U-Boot's configuration and rebuild
 
 Edit `meta-uboot/recipes-bsp/u-boot/files/primer.cfg`, for example:
 
@@ -298,7 +348,7 @@ result to the u-boot work dir (the path is printed), and
 window. A config option that compiles in a command, such as `CONFIG_CMD_...`,
 shows up in `help` after the rebuild.
 
-### 9. Patch U-Boot's source
+### 10. Patch U-Boot's source
 
 `devtool` gives you a git checkout of the U-Boot source to edit:
 
@@ -325,7 +375,7 @@ become the patch files.
 - **`saveenv` seems to hang after `Writing to Flash...`.** It is writing
   256 KiB one word at a time, which takes about 30 seconds. Wait for `done`.
 - **`Unknown command 'xyz'`.** The command is not compiled into this U-Boot;
-  enable its `CONFIG_CMD_*` in `primer.cfg` (exercise 8).
+  enable its `CONFIG_CMD_*` in `primer.cfg` (exercise 9).
 - **The kernel is skipped as incompatible, or `do_kernel_metadata` says
   `Could not locate BSP definition for qemuarm64-uboot/standard`.**
   `qemuarm64-uboot` must keep `MACHINEOVERRIDES =. "qemuarm64:"` and

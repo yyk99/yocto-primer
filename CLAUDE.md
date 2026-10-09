@@ -69,6 +69,16 @@ Guidance for Claude Code when working in this repository.
   NOR. U-Boot's JFFS2 commands are `fsinfo`/`fsls`/`fsload` after
   `chpart`; plain `ls` is the generic fs command and rejects JFFS2.
   The partition setup needs `mtdids` and `mtdparts` in the environment.
+- **Linux sees both banks as one MTD device.** The virt device tree has one
+  `cfi-flash` node with two `reg` ranges, so physmap concatenates them into
+  `0.flash` (128 MiB, erase size `0x40000`). The kernel needs the
+  `recipes-kernel/linux/files/mtd-jffs2.cfg` fragment (MTD, CFI, physmap-of,
+  JFFS2) and the image needs `mtd-utils`. Partition it with
+  `mtdparts=0.flash:64m(bank0),1m(env),-(jffs2)` on the kernel command line;
+  the partitions replace the whole-device entry, so they are `mtd0`-`mtd2`
+  and the JFFS2 one is `/dev/mtdblock2`. A wrong `mtdblockN` makes `mount`
+  fail and writes land on the rootfs. Linux's buffered flash writes work (U-Boot's
+  do not), and a file written from Linux is readable by U-Boot's `fsls`.
 - **U-Boot needs `CONFIG_SYS_FLASH_CFI_WIDTH_32BIT`** (in `primer.cfg`).
   QEMU's flash is two x16 chips interleaved on a 32-bit bus; the defconfig
   probes ports upward from 8 bits, settles on 16 and sees only 32 MB per
