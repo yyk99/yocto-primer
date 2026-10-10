@@ -6,3 +6,5 @@ Common targets:
 
 Run it:  ../scripts/run-qemu.sh
 
+Shared downloads/sstate cache: see ../../site.conf.example, link it as
+conf/site.conf. Check with:  bitbake-getvar --value DL_DIR

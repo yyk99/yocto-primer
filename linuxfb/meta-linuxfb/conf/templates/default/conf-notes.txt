@@ -10,3 +10,6 @@ Targets:
 Run the image with:
     runqemu linuxfb-image slirp nographic publicvnc  (VNC on port 5900, serial here)
     runqemu linuxfb-image slirp                      (SDL window)
+
+Shared downloads/sstate cache: see ../../site.conf.example, link it as
+conf/site.conf. Check with:  bitbake-getvar --value DL_DIR
