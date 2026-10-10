@@ -198,6 +198,7 @@ the build instead, see exercise 9.
 ```
 flinfo
 md.b 0x400000 20
+setenv bootargs "root=/dev/vda2 rw console=ttyAMA0"
 cp.b 0x400000 ${kernel_addr_r} 0x2000000
 booti ${kernel_addr_r} - ${fdtcontroladdr}
 ```
@@ -207,6 +208,9 @@ booti ${kernel_addr_r} - ${fdtcontroladdr}
   from).
 - The kernel is in flash at `0x400000`. `cp.b` copies it to RAM (32 MiB is
   more than its size), then `booti` boots it as before.
+- `setenv bootargs` is needed unless you saved it with `saveenv` in
+  step 3. Without `root=`, the kernel panics with `Invalid configuration
+  from end user prevents continuing` (it cannot mount the root filesystem).
 - To program flash, erase a sector first (flash can only change 1 bits to 0):
 
 ```
