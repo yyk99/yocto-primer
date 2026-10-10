@@ -1,0 +1,35 @@
+# site.conf.example - shared Yocto settings for every build in this repo
+#
+# Put machine-wide settings here instead of in each project's local.conf,
+# so ch01/, linuxfb/ and u-boot-primer/ all reuse one set of downloads and
+# one sstate cache.
+#
+# Install (once per build directory, adjust the path):
+#
+#   cp site.conf.example ~/yocto-cache/site.conf
+#   ln -s ~/yocto-cache/site.conf <project>/build/conf/site.conf
+#
+# BitBake reads conf/site.conf from the build directory (it is on BBPATH),
+# before local.conf. Use "?=" so a project's local.conf can still override.
+
+# Where the cache lives. Change this one line to move everything.
+YOCTO_CACHE ?= "${HOME}/yocto-cache"
+
+# Source tarballs and git mirrors. Safe to share between all projects and
+# releases; BitBake locks entries while fetching.
+DL_DIR ?= "${YOCTO_CACHE}/downloads"
+
+# Shared state (prebuilt task output). Shared between projects, and between
+# machines too: entries are keyed by task hash, so a different MACHINE or
+# release just gets a different entry. Do not share TMPDIR - keep it per
+# build directory (the default, <build>/tmp).
+SSTATE_DIR ?= "${YOCTO_CACHE}/sstate-cache"
+
+# Optional: tarballs of git checkouts, so DL_DIR can be reused without
+# network access (and published as a SOURCE_MIRROR_URL for CI).
+#BB_GENERATE_MIRROR_TARBALLS = "1"
+
+# Optional: pull prebuilt sstate from the Yocto Project's public mirror.
+# The URL is versioned by release (scarthgap is 5.0); check the Yocto
+# docs for the current address before enabling.
+#SSTATE_MIRRORS ?= "file://.* http://sstate.yoctoproject.org/5.0/PATH;downloadfilename=PATH"

@@ -100,6 +100,10 @@ bitbake uboot-primer-image
 - **`TEMPLATECONF`** is how the build picks up `meta-uboot`'s `local.conf`
   and `bblayers.conf`; it only matters the first time, when `build/conf/` is
   created. Later shells just `source poky/oe-init-build-env build`.
+- **Shared downloads and sstate.** To reuse `DL_DIR` and `SSTATE_DIR` across
+  builds (and the other projects in this repo), install the repo root's
+  `site.conf.example` and link it into `build/conf/site.conf`; see the
+  comments in that file. Do this before the first build.
 - The outputs land in `build/tmp/deploy/images/qemuarm64-uboot/`:
   `u-boot.bin` and `uboot-primer-image-qemuarm64-uboot*.wic`.
 
