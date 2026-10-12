@@ -3,9 +3,9 @@
 A Yocto build of a small `qemuarm64` (aarch64) system where **U-Boot is the
 firmware**. QEMU's `virt` board runs U-Boot straight out of emulated **NOR
 flash**, like a real SoC board, and U-Boot loads the Linux kernel from the
-flash or from a FAT partition on a virtual disk. Its environment and a small
-JFFS2 filesystem live in a second flash bank. You get a real U-Boot prompt to poke at, and a build you can
-change and re-run in minutes.
+flash, and the root filesystem is a JFFS2 image in a second flash bank, next to
+U-Boot's saved environment. There is no disk. You get a real U-Boot prompt to
+poke at, and a build you can change and re-run in minutes.
 
 | Layer      | Branch      | Why                                          |
 |------------|-------------|----------------------------------------------|
@@ -19,16 +19,14 @@ The exact poky revision is pinned in `setup-layers.json`.
 ```
 u-boot-primer/
 ├── setup-layers, setup-layers.json    check out the pinned poky
-├── scripts/run-qemu.sh                boot U-Boot + the disk image in QEMU
-├── jffs2-root/                        files packed into the JFFS2 image in flash
+├── scripts/run-qemu.sh                boot U-Boot, kernel and rootfs from flash in QEMU
 └── meta-uboot/
     ├── conf/layer.conf
-    ├── conf/machine/qemuarm64-uboot.conf   qemuarm64 + U-Boot + wic disk
+    ├── conf/machine/qemuarm64-uboot.conf   qemuarm64 + U-Boot + JFFS2 rootfs
     ├── conf/templates/default/             TEMPLATECONF: local.conf + bblayers.conf
     ├── recipes-bsp/u-boot/                 bbappend + files/primer.cfg
     ├── recipes-kernel/linux/               bbappend + files/mtd-jffs2.cfg (flash + JFFS2)
-    ├── recipes-core/images/uboot-primer-image.bb
-    └── wic/uboot-qemu.wks                  FAT /boot (kernel) + ext4 rootfs
+    └── recipes-core/images/uboot-primer-image.bb
 ```
 
 `poky/` and `build/` are created here by the steps below and are gitignored.
@@ -45,18 +43,20 @@ u-boot-primer/
   kernel at `0x400000`. Bank 1 (`flash1.img`, mapped at `0x04000000`) holds the
   U-Boot environment in its first 1 MiB: `qemu_arm64_defconfig` sets
   `CONFIG_ENV_IS_IN_FLASH` with `CONFIG_ENV_ADDR=0x4000000`, so `saveenv`
-  survives a restart. A JFFS2 filesystem, built from `jffs2-root/`, starts at
-  `0x04100000`. Each bank is 64 MiB in 256 KiB erase sectors (the geometry
+  survives a restart. The root filesystem, a JFFS2 image built by Yocto from
+  `uboot-primer-image`, starts at `0x04100000` and fills the rest of the bank. Each bank is 64 MiB in 256 KiB erase sectors (the geometry
   `mkfs.jffs2 -e 0x40000` must match). The two chips are interleaved on a
   32-bit bus; `primer.cfg` sets `CONFIG_SYS_FLASH_CFI_WIDTH_32BIT` so U-Boot
   sees the full 64 MiB (by default it probes 16 bits and sees 32 MB).
 - **Device tree.** QEMU generates a DTB describing the `virt` board and hands
   it to U-Boot; U-Boot's own copy is at `$fdtcontroladdr`. Nothing here builds
   a DTB.
-- **Disk.** The root filesystem lives on a disk, like an SD card or eMMC on a
-  real board. `uboot-qemu.wks` makes a two-partition MBR disk. U-Boot sees it as
-  `virtio 0`: partition 1 is FAT with the kernel `Image`, partition 2 is the
-  ext4 root filesystem.
+- **Root filesystem in flash.** Like a small router or IoT board, the rootfs
+  is JFFS2 on NOR flash and there is no disk. Yocto builds it
+  (`IMAGE_FSTYPES += "jffs2"`, 256 KiB erase blocks, no cleanmarkers) and
+  `run-qemu.sh` copies it into `flash1.img`. Linux mounts it as
+  `/dev/mtdblock2` (`root=/dev/mtdblock2 rootfstype=jffs2`) and writes to it,
+  so changes persist in `flash1.img`.
 - **No `-kernel`, no `-bios`.** Unlike `runqemu`, `run-qemu.sh` never passes
   the kernel or the firmware to QEMU as such. The flash images are the only
   way they get in; if the kernel boots, it is because U-Boot loaded it.
@@ -105,7 +105,7 @@ bitbake uboot-primer-image
   `site.conf.example` and link it into `build/conf/site.conf`; see the
   comments in that file. Do this before the first build.
 - The outputs land in `build/tmp/deploy/images/qemuarm64-uboot/`:
-  `u-boot.bin` and `uboot-primer-image-qemuarm64-uboot*.wic`.
+  `u-boot.bin`, the kernel `Image` and `uboot-primer-image-qemuarm64-uboot*.jffs2`.
 
 Just the bootloader, no kernel or rootfs (handy while experimenting):
 
@@ -121,14 +121,12 @@ scripts/run-qemu.sh
 
 The script uses a host `qemu-system-aarch64` if there is one, else the one
 `bitbake qemu-system-native` built. It regenerates `flash0.img` from the build
-every run, so a rebuilt U-Boot or kernel is picked up. The disk is a snapshot,
-so changes to it are discarded on exit; `PERSIST=1 scripts/run-qemu.sh` writes
-to the image. `flash1.img` (the saved environment and the JFFS2 data) is kept
-between runs; recreate it, discarding both, with
-`RESET_ENV=1 scripts/run-qemu.sh`. Building the JFFS2 image needs
-`mkfs.jffs2`: `bitbake mtd-utils-native` (or `sudo apt install mtd-utils`);
-without it `flash1.img` is created without a filesystem. The script also works
-with only `bitbake u-boot` built, with no kernel or disk. Quit QEMU with
+every run, so a rebuilt U-Boot or kernel is picked up. `flash1.img` (the saved
+environment and the root filesystem) is kept between runs, so files written in
+Linux survive; recreate it from the latest build, discarding both, with
+`RESET_ENV=1 scripts/run-qemu.sh`. **After rebuilding the image, use
+`RESET_ENV=1`**, or QEMU keeps booting the old rootfs. The script also works
+with only `bitbake u-boot` built, with no kernel or rootfs. Quit QEMU with
 `Ctrl-a x`.
 
 You will see the banner, with `-primer` in the version string, and a 5 second
@@ -156,33 +154,34 @@ printenv
 
 ### 2. Boot Linux by hand
 
-Find the disk, then load and boot the kernel the way `bootcmd` would:
+The kernel is in flash at `0x400000`. Copy it to RAM, tell it where the root
+filesystem is, and start it:
 
 ```
-virtio scan
-virtio info
-part list virtio 0
-ls virtio 0:1
-load virtio 0:1 ${kernel_addr_r} Image
-setenv bootargs "root=/dev/vda2 rw console=ttyAMA0"
+cp.b 0x400000 ${kernel_addr_r} 0x2000000
+setenv bootargs "root=/dev/mtdblock2 rootfstype=jffs2 rw console=ttyAMA0 mtdparts=0.flash:64m(bank0),1m(env),-(jffs2)"
 booti ${kernel_addr_r} - ${fdtcontroladdr}
 ```
 
-- `load` needs the interface (`virtio`), the `device:partition` (`0:1`), an
-  address and a file name. `booti` is the aarch64 `Image` loader; the `-`
-  means no initramfs, and the last argument is the DTB.
+- `cp.b` copies bytes (32 MiB is more than the kernel's size). `booti` is the
+  aarch64 `Image` loader; the `-` means no initramfs, and the last argument
+  is the DTB.
+- `mtdparts=` splits Linux's view of the flash: the two banks are one 128 MiB
+  device `0.flash`, cut into `bank0` (`mtd0`), `env` (`mtd1`) and `jffs2`
+  (`mtd2`). `root=/dev/mtdblock2` is the third one, the JFFS2 partition.
 - Root login has no password (`debug-tweaks`). `poweroff` ends the QEMU run.
-- Try wrong values and read the errors: `root=/dev/vda1` (that is the FAT
-  partition) panics at mount; leaving out `console=ttyAMA0` gives you a
-  silent boot after `Starting kernel ...`.
+- Try wrong values and read the errors: leaving out `mtdparts=` or using
+  `root=/dev/mtdblock0` panics at mount (`mtdblock0` is the U-Boot and kernel
+  bank, or does not exist); leaving out `console=ttyAMA0` gives you a silent
+  boot after `Starting kernel ...`.
 
 ### 3. Make it boot itself
 
 Put the whole sequence in `bootcmd`, then boot:
 
 ```
-setenv bootcmd 'load virtio 0:1 ${kernel_addr_r} Image; booti ${kernel_addr_r} - ${fdtcontroladdr}'
-setenv bootargs 'root=/dev/vda2 rw console=ttyAMA0'
+setenv bootcmd 'cp.b 0x400000 ${kernel_addr_r} 0x2000000; booti ${kernel_addr_r} - ${fdtcontroladdr}'
+setenv bootargs 'root=/dev/mtdblock2 rootfstype=jffs2 rw console=ttyAMA0 mtdparts=0.flash:64m(bank0),1m(env),-(jffs2)'
 boot
 ```
 
@@ -198,19 +197,13 @@ the build instead, see exercise 9.
 ```
 flinfo
 md.b 0x400000 20
-setenv bootargs "root=/dev/vda2 rw console=ttyAMA0"
-cp.b 0x400000 ${kernel_addr_r} 0x2000000
-booti ${kernel_addr_r} - ${fdtcontroladdr}
 ```
 
 - `flinfo` shows the two flash banks (64 MB each, 256 sectors of 256 KiB) and
   which sectors are protected (`RO` is U-Boot itself, in the sectors it runs
   from).
-- The kernel is in flash at `0x400000`. `cp.b` copies it to RAM (32 MiB is
-  more than its size), then `booti` boots it as before.
-- `setenv bootargs` is needed unless you saved it with `saveenv` in
-  step 3. Without `root=`, the kernel panics with `Invalid configuration
-  from end user prevents continuing` (it cannot mount the root filesystem).
+- The kernel is in flash at `0x400000`: `md.b` shows its first bytes (an
+  arm64 `Image` has `ARM\x64` at offset `0x38`).
 - To program flash, erase a sector first (flash can only change 1 bits to 0):
 
 ```
@@ -224,11 +217,10 @@ md.l 0x800000 1
   `flash0.img` is rebuilt from the build on every run, so this does not last
   (and, unlike the environment in bank 1, is meant not to).
 
-### 5. A JFFS2 filesystem in flash
+### 5. The root filesystem in flash
 
-`run-qemu.sh` packs `jffs2-root/` into a JFFS2 image at `0x04100000` of
-bank 1 when it creates `flash1.img`. Tell U-Boot where it is, select it, and
-read it:
+The rootfs is a JFFS2 image at `0x04100000` of bank 1. Tell U-Boot where it
+is, select it, and read it:
 
 ```
 setenv mtdids nor1=nor1
@@ -237,8 +229,8 @@ mtdparts
 chpart nor1,1
 fsinfo
 fsls
-fsls /notes
-fsload ${loadaddr} /hello.txt
+fsls /etc
+fsload ${loadaddr} /etc/hostname
 md.b ${loadaddr} 24
 ```
 
@@ -246,50 +238,41 @@ md.b ${loadaddr} 24
   `env` partition (where `saveenv` writes) and a `jffs2` partition with the
   rest. `chpart nor1,1` selects the second one.
 - The JFFS2 commands are `fsinfo`, `fsls` and `fsload`. (`ls` is the generic
-  filesystem command, which does not know JFFS2.)
+  filesystem command, which does not know JFFS2.) `fsls` lists the root
+  filesystem of the running system: `/etc`, `/bin`, `/lib`, ...
 - Run `saveenv` after the two `setenv` lines to keep them across restarts.
   The environment (bank 1, first 1 MiB) and the filesystem (from `0x04100000`)
   don't overlap, so the files are still readable after `saveenv` and `reset`.
-- Change the files under `jffs2-root/`, then `RESET_ENV=1 scripts/run-qemu.sh`
-  to rebuild the image and see your files.
 - U-Boot's JFFS2 support is read-only. To write to the filesystem, use Linux
   (exercise 6).
 
 ### 6. Use the flash from Linux
 
 The kernel has MTD, CFI flash and JFFS2 support (`files/mtd-jffs2.cfg`), and
-the image has `mtd-utils`. Boot it from flash with the flash partitions on the
-kernel command line:
-
-```
-cp.b 0x400000 ${kernel_addr_r} 0x2000000
-setenv bootargs "root=/dev/vda2 rw console=ttyAMA0 mtdparts=0.flash:64m(bank0),1m(env),-(jffs2)"
-booti ${kernel_addr_r} - ${fdtcontroladdr}
-```
-
-Then, as root in Linux:
+the image has `mtd-utils`. Boot as in exercise 2 or 3, then, as root in Linux:
 
 ```
 cat /proc/mtd
-mkdir -p /mnt/jffs2
-mount -t jffs2 /dev/mtdblock2 /mnt/jffs2
-ls -lR /mnt/jffs2
-echo "written by Linux" > /mnt/jffs2/linux.txt
+mount | grep mtdblock
+echo "written by Linux" > /root/linux.txt
 sync
-umount /mnt/jffs2
 poweroff
 ```
 
-Start QEMU again (keep `flash1.img`: no `RESET_ENV`) and look from U-Boot:
+The root filesystem is the flash, so the file is written to it. Start QEMU
+again (keep `flash1.img`: no `RESET_ENV`) and look from U-Boot:
 
 ```
 setenv mtdids nor1=nor1
 setenv mtdparts mtdparts=nor1:1m(env),-(jffs2)
 chpart nor1,1
-fsls
-fsload ${loadaddr} /linux.txt
+fsls /root
+fsload ${loadaddr} /root/linux.txt
 md.b ${loadaddr} 12
 ```
+
+Boot Linux again and `cat /root/linux.txt`: it is still there, which a
+RAM-based or snapshot rootfs would not give you.
 
 - The device tree has one `cfi-flash` node with two `reg` ranges, so Linux
   probes both chips and concatenates them into one 128 MiB device named
@@ -297,12 +280,14 @@ md.b ${loadaddr} 12
   on the command line splits it the same way U-Boot did for bank 1: 64 MiB for
   bank 0, 1 MiB environment, the rest JFFS2.
 - With these partitions `/proc/mtd` lists `mtd0` to `mtd2`, so the JFFS2
-  partition is `/dev/mtdblock2`. If you pick a device that does not exist,
-  `mount` fails with `Couldn't look up '/dev/mtdblockN'` and anything you
-  then write goes to the root filesystem instead of the flash.
-- The erase size Linux reports (`0x40000`) is the one `mkfs.jffs2 -e` used.
-- Try `flash_erase` and `flashcp` from `mtd-utils` on `/dev/mtd2`, then
-  `mount` it again and see what JFFS2 does with an erased partition.
+  partition is `/dev/mtdblock2`. Pick the wrong `mtdblockN` and the mount
+  fails (or `mtdblock0` holds U-Boot and the kernel, not a JFFS2).
+- The erase size Linux reports (`0x40000`) is the one `JFFS2_ERASEBLOCK` set
+  when Yocto built the image.
+- Do not `flash_erase` `/dev/mtd2` while it is mounted as `/`: that erases the
+  running system. `RESET_ENV=1 scripts/run-qemu.sh` restores a fresh rootfs.
+  Try `flash_erase` on `/dev/mtd1` (the `env` partition) instead, then `reset`
+  and see U-Boot fall back to its default environment.
 
 ### 7. Memory and the device tree
 
@@ -376,7 +361,7 @@ become the patch files.
 - **Nothing happens after `Starting kernel ...`.** Wrong or missing
   `console=ttyAMA0`, or the DTB address is wrong.
 - **`Wrong Image Format for booti command`.** The load failed or used the
-  wrong file. Check `ls virtio 0:1` and that `load` printed a byte count.
+  wrong file. Check that `cp.b` copied from `0x400000` and that `md.b ${kernel_addr_r} 40` shows the `ARM\x64` magic at offset `0x38`.
 - **`saveenv` says `Flash buffer write timeout`.** `primer.cfg` turns off
   `CONFIG_SYS_FLASH_USE_BUFFER_WRITE` for this; rebuild `u-boot` if you have
   an older build.

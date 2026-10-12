@@ -1,6 +1,6 @@
 
 Common targets:
-    uboot-primer-image   disk image with the kernel on a FAT boot partition
+    uboot-primer-image   JFFS2 root filesystem image (goes into NOR flash)
     u-boot               just the bootloader
     qemu-system-native   QEMU for ../scripts/run-qemu.sh (if no host QEMU)
 

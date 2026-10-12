@@ -20,7 +20,7 @@ Guidance for Claude Code when working in this repository.
 - `u-boot-primer/` - hands-on U-Boot in QEMU, built with Yocto: a
   `qemuarm64-uboot` machine where QEMU `virt` runs poky's U-Boot
   (`qemu_arm64_defconfig`) from emulated NOR flash, and U-Boot loads the
-  kernel from the flash or from a wic disk. Layer `meta-uboot/` plus pinned
+  kernel and mounts a JFFS2 rootfs, both from the flash (no disk). Layer `meta-uboot/` plus pinned
   poky (`scarthgap`). `u-boot-primer/README.md` has the steps and exercises.
 
 ## linuxfb gotchas
@@ -59,14 +59,18 @@ Guidance for Claude Code when working in this repository.
   `0x400000`) and `flash1.img` and attaches them as `if=pflash` units 0 and
   1. The defconfig already has `CONFIG_ENV_IS_IN_FLASH` with
   `CONFIG_ENV_ADDR=0x4000000` (bank 1), so `saveenv` works once bank 1
-  exists. Pass `snapshot=off` per pflash drive (the disk uses
-  `snapshot=on`) or QEMU would drop the flash writes. Each bank must be
+  exists. Pass `snapshot=off` per pflash drive or QEMU may
+  drop the flash writes. Each bank must be
   padded to the full 64 MiB, with 0xff, the erased state.
-- **Bank 1 also holds a JFFS2 image at `0x04100000`,** built by `mkfs.jffs2`
-  (from `bitbake mtd-utils-native`) from `u-boot-primer/jffs2-root/` when
-  `flash1.img` is created; `RESET_ENV=1` recreates it. `mkfs.jffs2 -e` must
-  match the flash erase block (`0x40000`), and `-n` (no cleanmarkers) is for
-  NOR. U-Boot's JFFS2 commands are `fsinfo`/`fsls`/`fsload` after
+- **Bank 1 also holds the rootfs at `0x04100000`:** the image's `.jffs2`
+  (`IMAGE_FSTYPES += "jffs2"`), copied in when `flash1.img` is created, so a
+  rebuilt image needs `RESET_ENV=1`. Yocto's defaults already match the flash
+  (`JFFS2_ERASEBLOCK` `0x40000`, no cleanmarkers for NOR), but not the
+  endianness: `JFFS2_ENDIANNESS` came out as `-b`, which the little-endian
+  kernel cannot mount ("Unable to mount root fs on unknown-block(31,2)"), so
+  the machine conf sets `-l`. Linux boots with
+  `root=/dev/mtdblock2 rootfstype=jffs2` plus the `mtdparts=` below; the
+  MTD/JFFS2 options must be built in (`=y`), not modules. U-Boot's JFFS2 commands are `fsinfo`/`fsls`/`fsload` after
   `chpart`; plain `ls` is the generic fs command and rejects JFFS2.
   The partition setup needs `mtdids` and `mtdparts` in the environment.
 - **Linux sees both banks as one MTD device.** The virt device tree has one
@@ -84,9 +88,6 @@ Guidance for Claude Code when working in this repository.
   probes ports upward from 8 bits, settles on 16 and sees only 32 MB per
   bank with 128 KiB sectors. At 32 bits `flinfo` shows 64 MB in 256 sectors
   of 256 KiB.
-- **The wic disk still carries the kernel** (FAT partition), so the wic needs
-  `IMAGE_BOOT_FILES = "Image"` and `do_image_wic[depends]` on
-  `virtual/kernel:do_deploy` (set in the machine conf / image recipe).
 - **`saveenv` failed with `Flash buffer write timeout`** with the defconfig's
   `CONFIG_SYS_FLASH_USE_BUFFER_WRITE=y`, at both 16 and 32 bit port widths;
   `primer.cfg` turns it off, which fixes it. Word-by-word writes are slow,

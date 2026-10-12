@@ -1,25 +1,24 @@
 #!/usr/bin/env bash
-# Boot U-Boot from emulated NOR flash in QEMU, with the uboot-primer-image
-# disk attached.
+# Boot U-Boot from emulated NOR flash in QEMU. The root filesystem
+# (uboot-primer-image, JFFS2) is in the flash too: there is no disk.
 #
 # Usage: scripts/run-qemu.sh [extra qemu args...]
 #   BUILDDIR   build directory (default: <u-boot-primer>/build)
 #   QEMU       qemu-system-aarch64 to use (default: host one, else the one
 #              `bitbake qemu-system-native` built under BUILDDIR)
-#   PERSIST=1  write changes to the disk image (default: discarded on exit)
-#   RESET_ENV=1  recreate flash1.img (environment and JFFS2 contents)
+#   RESET_ENV=1  recreate flash1.img (environment and root filesystem)
 #
 # Flash layout (QEMU 'virt' has two 64 MiB CFI NOR banks, 256 KiB sectors):
 #   flash0  0x00000000  u-boot.bin       (rebuilt from the deploy dir every run)
 #           0x00400000  kernel Image     (if built)
 #   flash1  0x04000000  U-Boot environment (1 MiB); `saveenv` persists here
-#           0x04100000  JFFS2 filesystem, filled from jffs2-root/ when
-#                       flash1.img is created (needs mkfs.jffs2; see below)
+#           0x04100000  root filesystem: the image's .jffs2, copied in when
+#                       flash1.img is created (the rest of the bank, 63 MiB)
 #
-# flash1.img is created once and kept, so changes made in the guest persist.
-# RESET_ENV=1 recreates it, discarding the saved environment and JFFS2 data.
-# mkfs.jffs2 comes from the host (apt install mtd-utils) or from
-# `bitbake mtd-utils-native`.
+# flash1.img is created once and kept, so changes made in the guest persist
+# (it is the root filesystem: files written in Linux survive a restart).
+# RESET_ENV=1 recreates it, discarding the saved environment and every change
+# to the root filesystem.
 #
 # Quit QEMU with Ctrl-a x.
 set -euo pipefail
@@ -33,7 +32,6 @@ flashdir=$build/flash
 flash_size=$((64 * 1024 * 1024))
 kernel_offset=$((4 * 1024 * 1024))
 jffs2_offset=$((1024 * 1024))
-jffs2_eraseblock=0x40000
 
 qemu=${QEMU:-$(command -v qemu-system-aarch64 || true)}
 if [ -z "$qemu" ]; then
@@ -45,7 +43,7 @@ fi
 uboot=$deploy/u-boot.bin
 [ -f "$uboot" ] || { echo "missing $uboot: run 'bitbake u-boot'" >&2; exit 1; }
 kernel=$deploy/Image
-disk=$(ls "$deploy"/uboot-primer-image-"$machine"*.wic 2>/dev/null | head -n1 || true)
+rootfs=$(ls -t "$deploy"/uboot-primer-image-"$machine"*.jffs2 2>/dev/null | head -n1 || true)
 
 # A flash image is the whole bank, so pad with 0xff (the erased state).
 # Writing less than the full bank would make QEMU refuse the file.
@@ -75,32 +73,17 @@ pad_to_flash "$flash0"
 
 flash1=$flashdir/flash1.img
 if [ ! -f "$flash1" ] || [ "${RESET_ENV:-0}" = 1 ]; then
-    mkfs=$(command -v mkfs.jffs2 || find "$build/tmp/sysroots-components" \
-           -name mkfs.jffs2 -type f 2>/dev/null | head -n1 || true)
-    if [ -n "$mkfs" ] && [ -d "$top/jffs2-root" ]; then
-        # -n: no cleanmarkers (NOR), -l: little endian, -e: erase block size
-        "$mkfs" -d "$top/jffs2-root" -e "$jffs2_eraseblock" -l -n -o "$flashdir/jffs2.img"
+    if [ -n "$rootfs" ]; then
+        rsize=$(stat -L -c %s "$rootfs")
+        [ $((jffs2_offset + rsize)) -le "$flash_size" ] || { echo "$rootfs ($rsize bytes) does not fit in flash1" >&2; exit 1; }
         { head -c "$jffs2_offset" /dev/zero | tr '\0' '\377'
-          cat "$flashdir/jffs2.img"; } > "$flash1"
-        echo "flash1: created, JFFS2 ($(stat -c %s "$flashdir/jffs2.img") bytes) at 0x$(printf %x "$jffs2_offset")"
+          cat "$rootfs"; } > "$flash1"
+        echo "flash1: created, rootfs $rootfs ($rsize bytes) at 0x$(printf %x "$jffs2_offset")"
     else
         : > "$flash1"
-        echo "flash1: created without JFFS2 (no mkfs.jffs2: bitbake mtd-utils-native)"
+        echo "flash1: created without a rootfs (run 'bitbake uboot-primer-image')"
     fi
     pad_to_flash "$flash1"
-fi
-
-disk_args=()
-if [ -n "$disk" ]; then
-    # snapshot=on discards disk writes on exit, unless PERSIST=1. It is set
-    # per drive so it does not also apply to the flash images.
-    snap=on
-    [ "${PERSIST:-0}" = 1 ] && snap=off
-    disk_args=(-drive if=none,id=disk0,file="$disk",format=raw,snapshot=$snap
-               -device virtio-blk-pci,drive=disk0)
-    echo "disk:   $disk"
-else
-    echo "disk:   none (run 'bitbake uboot-primer-image' for the rootfs)"
 fi
 
 echo "qemu:   $qemu"
@@ -108,6 +91,5 @@ echo "flash:  $flashdir"
 exec "$qemu" -machine virt -cpu cortex-a57 -smp 2 -m 1G -nographic \
     -drive if=pflash,unit=0,format=raw,file="$flash0",snapshot=off \
     -drive if=pflash,unit=1,format=raw,file="$flash1",snapshot=off \
-    "${disk_args[@]}" \
     -netdev user,id=net0 -device virtio-net-pci,netdev=net0 \
     "$@"
