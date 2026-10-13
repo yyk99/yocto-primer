@@ -1,0 +1,381 @@
+# U-Boot primer: hands-on U-Boot in QEMU, built with Yocto
+
+A Yocto build of a small `qemuarm64` (aarch64) system where **U-Boot is the
+firmware**. QEMU's `virt` board runs U-Boot straight out of emulated **NOR
+flash**, like a real SoC board, and U-Boot loads the Linux kernel from the
+flash, and the root filesystem is a JFFS2 image in a second flash bank, next to
+U-Boot's saved environment. There is no disk. You get a real U-Boot prompt to
+poke at, and a build you can change and re-run in minutes.
+
+| Layer      | Branch      | Why                                          |
+|------------|-------------|----------------------------------------------|
+| poky       | `scarthgap` | Yocto 5.0 LTS, same as `ch01/`; ships U-Boot 2024.01 |
+| meta-uboot | (this repo) | the machine, the image, the U-Boot tweaks    |
+
+The exact poky revision is pinned in `setup-layers.json`.
+
+## Layout
+
+```
+u-boot-primer/
+├── setup-layers, setup-layers.json    check out the pinned poky
+├── scripts/run-qemu.sh                boot U-Boot, kernel and rootfs from flash in QEMU
+└── meta-uboot/
+    ├── conf/layer.conf
+    ├── conf/machine/qemuarm64-uboot.conf   qemuarm64 + U-Boot + JFFS2 rootfs
+    ├── conf/templates/default/             TEMPLATECONF: local.conf + bblayers.conf
+    ├── recipes-bsp/u-boot/                 bbappend + files/primer.cfg
+    ├── recipes-kernel/linux/               bbappend + files/mtd-jffs2.cfg (flash + JFFS2)
+    └── recipes-core/images/uboot-primer-image.bb
+```
+
+`poky/` and `build/` are created here by the steps below and are gitignored.
+
+## How the pieces fit
+
+- **Firmware.** `u-boot` is built from poky's recipe with
+  `qemu_arm64_defconfig` (poky's `qemuarm64` already selects it). The result,
+  `u-boot.bin`, is a flat binary. `files/primer.cfg` is a config fragment
+  merged on top.
+- **NOR flash.** QEMU's `virt` has two CFI NOR flash banks, 64 MiB each.
+  `run-qemu.sh` builds `build/flash/flash0.img` with `u-boot.bin` at the start
+  (the CPU starts at address 0, so this is where U-Boot runs from) and the
+  kernel at `0x400000`. Bank 1 (`flash1.img`, mapped at `0x04000000`) holds the
+  U-Boot environment in its first 1 MiB: `qemu_arm64_defconfig` sets
+  `CONFIG_ENV_IS_IN_FLASH` with `CONFIG_ENV_ADDR=0x4000000`, so `saveenv`
+  survives a restart. The root filesystem, a JFFS2 image built by Yocto from
+  `uboot-primer-image`, starts at `0x04100000` and fills the rest of the bank. Each bank is 64 MiB in 256 KiB erase sectors (the geometry
+  `mkfs.jffs2 -e 0x40000` must match). The two chips are interleaved on a
+  32-bit bus; `primer.cfg` sets `CONFIG_SYS_FLASH_CFI_WIDTH_32BIT` so U-Boot
+  sees the full 64 MiB (by default it probes 16 bits and sees 32 MB).
+- **Device tree.** QEMU generates a DTB describing the `virt` board and hands
+  it to U-Boot; U-Boot's own copy is at `$fdtcontroladdr`. Nothing here builds
+  a DTB.
+- **Root filesystem in flash.** Like a small router or IoT board, the rootfs
+  is JFFS2 on NOR flash and there is no disk. Yocto builds it
+  (`IMAGE_FSTYPES += "jffs2"`, 256 KiB erase blocks, no cleanmarkers) and
+  `run-qemu.sh` copies it into `flash1.img`. Linux mounts it as
+  `/dev/mtdblock2` (`root=/dev/mtdblock2 rootfstype=jffs2`) and writes to it,
+  so changes persist in `flash1.img`.
+- **No `-kernel`, no `-bios`.** Unlike `runqemu`, `run-qemu.sh` never passes
+  the kernel or the firmware to QEMU as such. The flash images are the only
+  way they get in; if the kernel boots, it is because U-Boot loaded it.
+
+## Host prerequisites
+
+Same as the other chapters (Ubuntu 24.04, Yocto scarthgap list):
+
+```bash
+sudo apt install build-essential chrpath cpio debianutils diffstat file gawk \
+    gcc git iputils-ping libacl1 locales lz4 python3 python3-git \
+    python3-jinja2 python3-pexpect python3-pip python3-subunit socat \
+    texinfo unzip wget xz-utils zstd
+```
+
+Ubuntu 23.10+ also needs BitBake allowed to use unprivileged user namespaces,
+or every `bitbake` run stops with `User namespaces are not usable by
+BitBake`. Quickest fix, until reboot:
+`sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0`.
+
+A QEMU on the host (`sudo apt install qemu-system-arm`) is the easiest way to
+run the result; otherwise `bitbake qemu-system-native` and the script finds
+that one.
+
+**Disk and time.** Roughly 15-20 GB with downloads and sstate. A cold build
+takes about an hour or two on 8 cores: toolchain, kernel, then the image.
+U-Boot itself builds in a minute or so.
+
+## Build
+
+All commands run from `u-boot-primer/`.
+
+```bash
+./setup-layers --destdir .     # clone poky at the pinned rev
+TEMPLATECONF=$PWD/meta-uboot/conf/templates/default source poky/oe-init-build-env build
+bitbake uboot-primer-image
+```
+
+- **Pass `--destdir .`.** Without it, `setup-layers` clones next to the repo
+  instead of inside `u-boot-primer/`.
+- **`TEMPLATECONF`** is how the build picks up `meta-uboot`'s `local.conf`
+  and `bblayers.conf`; it only matters the first time, when `build/conf/` is
+  created. Later shells just `source poky/oe-init-build-env build`.
+- **Shared downloads and sstate.** To reuse `DL_DIR` and `SSTATE_DIR` across
+  builds (and the other projects in this repo), install the repo root's
+  `site.conf.example` and link it into `build/conf/site.conf`; see the
+  comments in that file. Do this before the first build.
+- The outputs land in `build/tmp/deploy/images/qemuarm64-uboot/`:
+  `u-boot.bin`, the kernel `Image` and `uboot-primer-image-qemuarm64-uboot*.jffs2`.
+
+Just the bootloader, no kernel or rootfs (handy while experimenting):
+
+```bash
+bitbake u-boot
+```
+
+## Run
+
+```bash
+scripts/run-qemu.sh
+```
+
+The script uses a host `qemu-system-aarch64` if there is one, else the one
+`bitbake qemu-system-native` built. It regenerates `flash0.img` from the build
+every run, so a rebuilt U-Boot or kernel is picked up. `flash1.img` (the saved
+environment and the root filesystem) is kept between runs, so files written in
+Linux survive; recreate it from the latest build, discarding both, with
+`RESET_ENV=1 scripts/run-qemu.sh`. **After rebuilding the image, use
+`RESET_ENV=1`**, or QEMU keeps booting the old rootfs. The script also works
+with only `bitbake u-boot` built, with no kernel or rootfs. Quit QEMU with
+`Ctrl-a x`.
+
+You will see the banner, with `-primer` in the version string, and a 5 second
+`Hit any key to stop autoboot` countdown. The image has no `boot.scr` or
+`extlinux.conf`, so if you let it run, U-Boot's default distro boot finds
+nothing to boot (it also tries PXE/DHCP over the network) and drops to the
+`=>` prompt. That is the expected starting point for the exercises.
+
+## Exercises
+
+Type these at the `=>` prompt.
+
+### 1. Look around
+
+```
+version
+help
+bdinfo
+printenv
+```
+
+- `bdinfo` shows RAM start and size, and where U-Boot relocated itself.
+- In `printenv`, find `kernel_addr_r`, `ramdisk_addr_r`, `loadaddr` and
+  `bootcmd`. Those addresses are where you put things in the next exercise.
+
+### 2. Boot Linux by hand
+
+The kernel is in flash at `0x400000`. Copy it to RAM, tell it where the root
+filesystem is, and start it:
+
+```
+cp.b 0x400000 ${kernel_addr_r} 0x2000000
+setenv bootargs "root=/dev/mtdblock2 rootfstype=jffs2 rw console=ttyAMA0 mtdparts=0.flash:64m(bank0),1m(env),-(jffs2)"
+booti ${kernel_addr_r} - ${fdtcontroladdr}
+```
+
+- `cp.b` copies bytes (32 MiB is more than the kernel's size). `booti` is the
+  aarch64 `Image` loader; the `-` means no initramfs, and the last argument
+  is the DTB.
+- `mtdparts=` splits Linux's view of the flash: the two banks are one 128 MiB
+  device `0.flash`, cut into `bank0` (`mtd0`), `env` (`mtd1`) and `jffs2`
+  (`mtd2`). `root=/dev/mtdblock2` is the third one, the JFFS2 partition.
+- Root login has no password (`debug-tweaks`). `poweroff` ends the QEMU run.
+- Try wrong values and read the errors: leaving out `mtdparts=` or using
+  `root=/dev/mtdblock0` panics at mount (`mtdblock0` is the U-Boot and kernel
+  bank, or does not exist); leaving out `console=ttyAMA0` gives you a silent
+  boot after `Starting kernel ...`.
+
+### 3. Make it boot itself
+
+Put the whole sequence in `bootcmd`, then boot:
+
+```
+setenv bootcmd 'cp.b 0x400000 ${kernel_addr_r} 0x2000000; booti ${kernel_addr_r} - ${fdtcontroladdr}'
+setenv bootargs 'root=/dev/mtdblock2 rootfstype=jffs2 rw console=ttyAMA0 mtdparts=0.flash:64m(bank0),1m(env),-(jffs2)'
+boot
+```
+
+Then `saveenv` writes the environment to flash bank 1. It takes about 30
+seconds and prints nothing while it writes (QEMU's flash is programmed word by
+word), so wait for the prompt. The values are
+still there after `reset`, and across `run-qemu.sh` runs. Undo it with
+`env default -a; saveenv`, or start with `RESET_ENV=1`. To bake values into
+the build instead, see exercise 9.
+
+### 4. The NOR flash
+
+```
+flinfo
+md.b 0x400000 20
+```
+
+- `flinfo` shows the two flash banks (64 MB each, 256 sectors of 256 KiB) and
+  which sectors are protected (`RO` is U-Boot itself, in the sectors it runs
+  from).
+- The kernel is in flash at `0x400000`: `md.b` shows its first bytes (an
+  arm64 `Image` has `ARM\x64` at offset `0x38`).
+- To program flash, erase a sector first (flash can only change 1 bits to 0).
+  Pick one that is free: the kernel occupies bank 0 from `0x400000` up to about
+  `0x1B80000`, so erasing `0x800000` would corrupt it and the next `boot` hangs
+  after `Starting kernel ...`:
+
+```
+protect off 0x3000000 +0x40000
+erase 0x3000000 +0x40000
+mw.l ${loadaddr} 0xcafef00d
+cp.b ${loadaddr} 0x3000000 4
+md.l 0x3000000 1
+```
+
+  `flash0.img` is rebuilt from the build on every run, so this does not last
+  (and, unlike the environment in bank 1, is meant not to).
+
+### 5. The root filesystem in flash
+
+The rootfs is a JFFS2 image at `0x04100000` of bank 1. Tell U-Boot where it
+is, select it, and read it:
+
+```
+setenv mtdids nor1=nor1
+setenv mtdparts mtdparts=nor1:1m(env),-(jffs2)
+mtdparts
+chpart nor1,1
+fsinfo
+fsls
+fsls /etc
+fsload ${loadaddr} /etc/hostname
+md.b ${loadaddr} 24
+```
+
+- `mtdids` names the flash device and `mtdparts` splits bank 1 into a 1 MiB
+  `env` partition (where `saveenv` writes) and a `jffs2` partition with the
+  rest. `chpart nor1,1` selects the second one.
+- The JFFS2 commands are `fsinfo`, `fsls` and `fsload`. (`ls` is the generic
+  filesystem command, which does not know JFFS2.) `fsls` lists the root
+  filesystem of the running system: `/etc`, `/bin`, `/lib`, ...
+- Run `saveenv` after the two `setenv` lines to keep them across restarts.
+  The environment (bank 1, first 1 MiB) and the filesystem (from `0x04100000`)
+  don't overlap, so the files are still readable after `saveenv` and `reset`.
+- U-Boot's JFFS2 support is read-only. To write to the filesystem, use Linux
+  (exercise 6).
+
+### 6. Use the flash from Linux
+
+The kernel has MTD, CFI flash and JFFS2 support (`files/mtd-jffs2.cfg`), and
+the image has `mtd-utils`. Boot as in exercise 2 or 3, then, as root in Linux:
+
+```
+cat /proc/mtd
+mount | grep mtdblock
+echo "written by Linux" > /home/root/linux.txt
+sync
+poweroff
+```
+
+The root filesystem is the flash, so the file is written to it. Start QEMU
+again (keep `flash1.img`: no `RESET_ENV`) and look from U-Boot:
+
+```
+setenv mtdids nor1=nor1
+setenv mtdparts mtdparts=nor1:1m(env),-(jffs2)
+chpart nor1,1
+fsls /home/root
+fsload ${loadaddr} /home/root/linux.txt
+md.b ${loadaddr} 12
+```
+
+Boot Linux again and `cat /home/root/linux.txt`: it is still there, which a
+RAM-based or snapshot rootfs would not give you.
+
+- The device tree has one `cfi-flash` node with two `reg` ranges, so Linux
+  probes both chips and concatenates them into one 128 MiB device named
+  `0.flash` (see the `dmesg` lines with `physmap-flash`). The `mtdparts=`
+  on the command line splits it the same way U-Boot did for bank 1: 64 MiB for
+  bank 0, 1 MiB environment, the rest JFFS2.
+- With these partitions `/proc/mtd` lists `mtd0` to `mtd2`, so the JFFS2
+  partition is `/dev/mtdblock2`. Pick the wrong `mtdblockN` and the mount
+  fails (or `mtdblock0` holds U-Boot and the kernel, not a JFFS2).
+- The erase size Linux reports (`0x40000`) is the one `JFFS2_ERASEBLOCK` set
+  when Yocto built the image.
+- Do not `flash_erase` `/dev/mtd2` while it is mounted as `/`: that erases the
+  running system. `RESET_ENV=1 scripts/run-qemu.sh` restores a fresh rootfs.
+  Try `flash_erase` on `/dev/mtd1` (the `env` partition) instead, then `reset`
+  and see U-Boot fall back to its default environment.
+
+### 7. Memory and the device tree
+
+```
+md.l ${kernel_addr_r} 4              # dump 4 words of RAM
+mw.l ${loadaddr} 0x12345678 4        # write them elsewhere
+cmp.l ${kernel_addr_r} ${loadaddr} 4
+fdt addr ${fdtcontroladdr}
+fdt print /memory
+fdt print /chosen
+```
+
+`md` / `mw` are the same commands you would use on real hardware to peek at
+registers. After `booti`, compare `fdt print /chosen` before and after: U-Boot
+adds `bootargs` to the DTB it passes to the kernel.
+
+### 8. Networking
+
+QEMU's user-mode network gives the guest `10.0.2.15` and a DHCP server:
+
+```
+setenv autoload no
+dhcp
+printenv ipaddr serverip
+ping 10.0.2.2
+```
+
+`10.0.2.2` is the host as seen from the guest. `autoload no` stops `dhcp`
+from also trying to TFTP a boot file (there is none, and `ipaddr` is not
+kept when that fails). To go further, QEMU can serve
+TFTP itself: change the script's `-netdev user,id=net0` to
+`-netdev user,id=net0,tftp=/some/dir`, put a kernel `Image` in that dir, then
+`tftpboot ${kernel_addr_r} Image` and `booti` it.
+
+### 9. Change U-Boot's configuration and rebuild
+
+Edit `meta-uboot/recipes-bsp/u-boot/files/primer.cfg`, for example:
+
+```
+CONFIG_BOOTDELAY=10
+CONFIG_LOCALVERSION="-mine"
+```
+
+then:
+
+```bash
+bitbake u-boot
+scripts/run-qemu.sh      # the banner and the countdown change
+```
+
+`bitbake -c savedefconfig u-boot` writes the minimal defconfig of the merged
+result to the u-boot work dir (the path is printed), and
+`bitbake -c menuconfig u-boot` opens the interactive menu in a new terminal
+window. A config option that compiles in a command, such as `CONFIG_CMD_...`,
+shows up in `help` after the rebuild.
+
+### 10. Patch U-Boot's source
+
+`devtool` gives you a git checkout of the U-Boot source to edit:
+
+```bash
+devtool modify u-boot
+# edit workspace/sources/u-boot/..., e.g. add a printf to board/emulation/qemu-arm/qemu-arm.c
+bitbake u-boot
+scripts/run-qemu.sh
+devtool finish u-boot ../meta-uboot     # turns your commits into a patch in the layer
+```
+
+Commit in `workspace/sources/u-boot` before `devtool finish`; the commits
+become the patch files.
+
+## Troubleshooting
+
+- **Nothing happens after `Starting kernel ...`.** Wrong or missing
+  `console=ttyAMA0`, or the DTB address is wrong.
+- **`Wrong Image Format for booti command`.** The load failed or used the
+  wrong file. Check that `cp.b` copied from `0x400000` and that `md.b ${kernel_addr_r} 40` shows the `ARM\x64` magic at offset `0x38`.
+- **`saveenv` says `Flash buffer write timeout`.** `primer.cfg` turns off
+  `CONFIG_SYS_FLASH_USE_BUFFER_WRITE` for this; rebuild `u-boot` if you have
+  an older build.
+- **`saveenv` seems to hang after `Writing to Flash...`.** It is writing
+  256 KiB one word at a time, which takes about 30 seconds. Wait for `done`.
+- **`Unknown command 'xyz'`.** The command is not compiled into this U-Boot;
+  enable its `CONFIG_CMD_*` in `primer.cfg` (exercise 9).
+- **The kernel is skipped as incompatible, or `do_kernel_metadata` says
+  `Could not locate BSP definition for qemuarm64-uboot/standard`.**
+  `qemuarm64-uboot` must keep `MACHINEOVERRIDES =. "qemuarm64:"` and
+  `KMACHINE = "qemuarm64"` in the machine config.

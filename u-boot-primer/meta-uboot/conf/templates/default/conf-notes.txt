@@ -1,0 +1,10 @@
+
+Common targets:
+    uboot-primer-image   JFFS2 root filesystem image (goes into NOR flash)
+    u-boot               just the bootloader
+    qemu-system-native   QEMU for ../scripts/run-qemu.sh (if no host QEMU)
+
+Run it:  ../scripts/run-qemu.sh
+
+Shared downloads/sstate cache: see ../../site.conf.example, link it as
+conf/site.conf. Check with:  bitbake-getvar --value DL_DIR

@@ -86,6 +86,10 @@ bitbake linuxfb-image
 - **poky's `./setup-build` helper doesn't list this template.** It only
   scans the layers `setup-layers` checked out, not `meta-linuxfb`, so use
   `TEMPLATECONF` as shown.
+- **Shared downloads and sstate.** To reuse `DL_DIR` and `SSTATE_DIR` across
+  builds (and the other projects in this repo), install the repo root's
+  `site.conf.example` and link it into `build/conf/site.conf`; see the
+  comments in that file. Do this before the first build.
 
 To build just the app (e.g. while editing `main.cpp`): `bitbake linuxfb-demo`.
 

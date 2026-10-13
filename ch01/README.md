@@ -148,11 +148,12 @@ source oe-init-build-env build-rpi3
 source oe-init-build-env build-qemu
 ```
 
-Each has its own `tmp/`, and you can point both at one shared cache by setting in each `local.conf`:
+Each has its own `tmp/`, and you can point both at one shared cache with a `site.conf`. The repo root has a `site.conf.example` that sets `DL_DIR` and `SSTATE_DIR` under `~/yocto-cache/`; install it once and link it into each build dir:
 
-```
-DL_DIR = "/home/yyk/yocto-cache/downloads"
-SSTATE_DIR = "/home/yyk/yocto-cache/sstate-cache"
+```bash
+cp site.conf.example ~/yocto-cache/site.conf    # from the repo root
+ln -s ~/yocto-cache/site.conf build-rpi3/conf/site.conf
+ln -s ~/yocto-cache/site.conf build-qemu/conf/site.conf
 ```
 
 That gives you independent `tmp/` directories that are trivial to delete, while still sharing downloads and sstate between them.

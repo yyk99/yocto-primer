@@ -17,6 +17,11 @@ Guidance for Claude Code when working in this repository.
   app on `/dev/fb0` via Qt's `linuxfb` plugin. Layer `meta-linuxfb/`
   (app, image, TEMPLATECONF) plus pinned poky/meta-openembedded
   (`scarthgap`) and meta-qt6 (`6.11`). `linuxfb/README.md` has the steps.
+- `u-boot-primer/` - hands-on U-Boot in QEMU, built with Yocto: a
+  `qemuarm64-uboot` machine where QEMU `virt` runs poky's U-Boot
+  (`qemu_arm64_defconfig`) from emulated NOR flash, and U-Boot loads the
+  kernel and mounts a JFFS2 rootfs, both from the flash (no disk). Layer `meta-uboot/` plus pinned
+  poky (`scarthgap`). `u-boot-primer/README.md` has the steps and exercises.
 
 ## linuxfb gotchas
 
@@ -40,6 +45,58 @@ Guidance for Claude Code when working in this repository.
   AppArmor userns fix from `linuxfb/README.md`. For a parse-only check
   without root, `bitbake -R <file with INHERIT:remove = "sanity"> -p` works
   (a missing host tool can be stubbed on `PATH` for the parse).
+
+## u-boot-primer gotchas
+
+- **The machine reuses qemuarm64's kernel by override and `KMACHINE`.**
+  `qemuarm64-uboot` sets `MACHINEOVERRIDES =. "qemuarm64:"` (without it
+  `linux-yocto` is skipped: `COMPATIBLE_MACHINE`, `KBRANCH` and
+  `SRCREV_machine` are keyed on it) and `KMACHINE = "qemuarm64"` (it defaults
+  to `${MACHINE}`, and `do_kernel_metadata` fails with "Could not locate BSP
+  definition for qemuarm64-uboot/standard").
+- **U-Boot runs from emulated NOR flash, not `-bios`/`-kernel`.**
+  `run-qemu.sh` builds `build/flash/flash0.img` (u-boot.bin at 0, kernel at
+  `0x400000`) and `flash1.img` and attaches them as `if=pflash` units 0 and
+  1. The defconfig already has `CONFIG_ENV_IS_IN_FLASH` with
+  `CONFIG_ENV_ADDR=0x4000000` (bank 1), so `saveenv` works once bank 1
+  exists. Pass `snapshot=off` per pflash drive or QEMU may
+  drop the flash writes. Each bank must be
+  padded to the full 64 MiB, with 0xff, the erased state.
+- **Bank 1 also holds the rootfs at `0x04100000`:** the image's `.jffs2`
+  (`IMAGE_FSTYPES += "jffs2"`), copied in when `flash1.img` is created, so a
+  rebuilt image needs `RESET_ENV=1`. Yocto's defaults already match the flash
+  (`JFFS2_ERASEBLOCK` `0x40000`, no cleanmarkers for NOR), but not the
+  endianness: `JFFS2_ENDIANNESS` came out as `-b`, which the little-endian
+  kernel cannot mount ("Unable to mount root fs on unknown-block(31,2)"), so
+  the machine conf sets `-l`. Linux boots with
+  `root=/dev/mtdblock2 rootfstype=jffs2` plus the `mtdparts=` below; the
+  MTD/JFFS2 options must be built in (`=y`), not modules. U-Boot's JFFS2 commands are `fsinfo`/`fsls`/`fsload` after
+  `chpart`; plain `ls` is the generic fs command and rejects JFFS2.
+  The partition setup needs `mtdids` and `mtdparts` in the environment.
+- **Linux sees both banks as one MTD device.** The virt device tree has one
+  `cfi-flash` node with two `reg` ranges, so physmap concatenates them into
+  `0.flash` (128 MiB, erase size `0x40000`). The kernel needs the
+  `recipes-kernel/linux/files/mtd-jffs2.cfg` fragment (MTD, CFI, physmap-of,
+  JFFS2) and the image needs `mtd-utils`. Partition it with
+  `mtdparts=0.flash:64m(bank0),1m(env),-(jffs2)` on the kernel command line;
+  the partitions replace the whole-device entry, so they are `mtd0`-`mtd2`
+  and the JFFS2 one is `/dev/mtdblock2`. A wrong `mtdblockN` makes `mount`
+  fail and writes land on the rootfs. Linux's buffered flash writes work (U-Boot's
+  do not), and a file written from Linux is readable by U-Boot's `fsls`.
+- **U-Boot needs `CONFIG_SYS_FLASH_CFI_WIDTH_32BIT`** (in `primer.cfg`).
+  QEMU's flash is two x16 chips interleaved on a 32-bit bus; the defconfig
+  probes ports upward from 8 bits, settles on 16 and sees only 32 MB per
+  bank with 128 KiB sectors. At 32 bits `flinfo` shows 64 MB in 256 sectors
+  of 256 KiB.
+- **`saveenv` failed with `Flash buffer write timeout`** with the defconfig's
+  `CONFIG_SYS_FLASH_USE_BUFFER_WRITE=y`, at both 16 and 32 bit port widths;
+  `primer.cfg` turns it off, which fixes it. Word-by-word writes are slow,
+  though: `saveenv` takes about 30 seconds (256 KiB `CONFIG_ENV_SIZE`), and
+  U-Boot prints nothing while it writes.
+- **The build config comes from `TEMPLATECONF`,** as in `linuxfb/`, and
+  `setup-layers.json` is hand-maintained (poky only). Pass `--destdir .`
+  to `setup-layers`; `poky/`, `build/`, `.oe-layers.json` and `setup-build`
+  are gitignored.
 
 ## ch01 gotchas
 

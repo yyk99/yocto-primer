@@ -12,7 +12,9 @@ DISTRO ?= "poky"
 DISTRO_FEATURES:remove = "x11 wayland opengl vulkan ptest"
 
 # Share downloads and sstate between build dirs (and with other checkouts)
-# by pointing these somewhere outside build/, e.g.:
+# by pointing these somewhere outside build/. Preferably do it once for all
+# projects with the repo root's site.conf.example (linked to
+# build/conf/site.conf); or set them here, e.g.:
 #DL_DIR ?= "${HOME}/yocto-cache/downloads"
 #SSTATE_DIR ?= "${HOME}/yocto-cache/sstate-cache"
 
