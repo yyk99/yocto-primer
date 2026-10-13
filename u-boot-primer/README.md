@@ -149,7 +149,7 @@ printenv
 ```
 
 - `bdinfo` shows RAM start and size, and where U-Boot relocated itself.
-- In `printenv`, find `kernel_addr_r`, `fdt_addr_r`, `ramdisk_addr_r` and
+- In `printenv`, find `kernel_addr_r`, `ramdisk_addr_r`, `loadaddr` and
   `bootcmd`. Those addresses are where you put things in the next exercise.
 
 ### 2. Boot Linux by hand
@@ -204,14 +204,17 @@ md.b 0x400000 20
   from).
 - The kernel is in flash at `0x400000`: `md.b` shows its first bytes (an
   arm64 `Image` has `ARM\x64` at offset `0x38`).
-- To program flash, erase a sector first (flash can only change 1 bits to 0):
+- To program flash, erase a sector first (flash can only change 1 bits to 0).
+  Pick one that is free: the kernel occupies bank 0 from `0x400000` up to about
+  `0x1B80000`, so erasing `0x800000` would corrupt it and the next `boot` hangs
+  after `Starting kernel ...`:
 
 ```
-protect off 0x800000 +0x40000
-erase 0x800000 +0x40000
+protect off 0x3000000 +0x40000
+erase 0x3000000 +0x40000
 mw.l ${loadaddr} 0xcafef00d
-cp.b ${loadaddr} 0x800000 4
-md.l 0x800000 1
+cp.b ${loadaddr} 0x3000000 4
+md.l 0x3000000 1
 ```
 
   `flash0.img` is rebuilt from the build on every run, so this does not last
@@ -254,7 +257,7 @@ the image has `mtd-utils`. Boot as in exercise 2 or 3, then, as root in Linux:
 ```
 cat /proc/mtd
 mount | grep mtdblock
-echo "written by Linux" > /root/linux.txt
+echo "written by Linux" > /home/root/linux.txt
 sync
 poweroff
 ```
@@ -266,12 +269,12 @@ again (keep `flash1.img`: no `RESET_ENV`) and look from U-Boot:
 setenv mtdids nor1=nor1
 setenv mtdparts mtdparts=nor1:1m(env),-(jffs2)
 chpart nor1,1
-fsls /root
-fsload ${loadaddr} /root/linux.txt
+fsls /home/root
+fsload ${loadaddr} /home/root/linux.txt
 md.b ${loadaddr} 12
 ```
 
-Boot Linux again and `cat /root/linux.txt`: it is still there, which a
+Boot Linux again and `cat /home/root/linux.txt`: it is still there, which a
 RAM-based or snapshot rootfs would not give you.
 
 - The device tree has one `cfi-flash` node with two `reg` ranges, so Linux
@@ -293,8 +296,8 @@ RAM-based or snapshot rootfs would not give you.
 
 ```
 md.l ${kernel_addr_r} 4              # dump 4 words of RAM
-mw.l ${fdt_addr_r} 0x12345678 4      # write them
-cmp.l ${kernel_addr_r} ${fdt_addr_r} 4
+mw.l ${loadaddr} 0x12345678 4        # write them elsewhere
+cmp.l ${kernel_addr_r} ${loadaddr} 4
 fdt addr ${fdtcontroladdr}
 fdt print /memory
 fdt print /chosen
@@ -309,12 +312,15 @@ adds `bootargs` to the DTB it passes to the kernel.
 QEMU's user-mode network gives the guest `10.0.2.15` and a DHCP server:
 
 ```
+setenv autoload no
 dhcp
 printenv ipaddr serverip
 ping 10.0.2.2
 ```
 
-`10.0.2.2` is the host as seen from the guest. To go further, QEMU can serve
+`10.0.2.2` is the host as seen from the guest. `autoload no` stops `dhcp`
+from also trying to TFTP a boot file (there is none, and `ipaddr` is not
+kept when that fails). To go further, QEMU can serve
 TFTP itself: change the script's `-netdev user,id=net0` to
 `-netdev user,id=net0,tftp=/some/dir`, put a kernel `Image` in that dir, then
 `tftpboot ${kernel_addr_r} Image` and `booti` it.
