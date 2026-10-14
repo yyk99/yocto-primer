@@ -73,6 +73,13 @@ Guidance for Claude Code when working in this repository.
   MTD/JFFS2 options must be built in (`=y`), not modules. U-Boot's JFFS2 commands are `fsinfo`/`fsls`/`fsload` after
   `chpart`; plain `ls` is the generic fs command and rejects JFFS2.
   The partition setup needs `mtdids` and `mtdparts` in the environment.
+- **The image is built with musl** (`TCLIBC ?= "musl"` in the template
+  `local.conf.sample`): the rootfs is about 30% smaller than with glibc. A
+  `TCLIBC` change reuses `build/tmp` (the new images replace the old ones in
+  the deploy dir) and rebuilds the toolchain and kernel. BitBake's disk
+  monitor stops the build when free space drops below 1 GB, yet `bitbake`
+  can still exit 0 without an image - look for `STOPTASKS` in the log, free
+  space, and run it again.
 - **Linux sees both banks as one MTD device.** The virt device tree has one
   `cfi-flash` node with two `reg` ranges, so physmap concatenates them into
   `0.flash` (128 MiB, erase size `0x40000`). The kernel needs the

@@ -51,6 +51,11 @@ u-boot-primer/
 - **Device tree.** QEMU generates a DTB describing the `virt` board and hands
   it to U-Boot; U-Boot's own copy is at `$fdtcontroladdr`. Nothing here builds
   a DTB.
+- **musl, not glibc.** `local.conf.sample` sets `TCLIBC ?= "musl"`: the
+  rootfs has to fit in 63 MiB of flash, and with musl it is about 30%
+  smaller (14.9 MB instead of 21.5 MB uncompressed; the JFFS2 image is 5.75
+  MiB instead of 8 MiB). Set `TCLIBC = "glibc"` in `build/conf/local.conf`
+  to compare; that rebuilds the toolchain and the kernel.
 - **Root filesystem in flash.** Like a small router or IoT board, the rootfs
   is JFFS2 on NOR flash and there is no disk. Yocto builds it
   (`IMAGE_FSTYPES += "jffs2"`, 256 KiB erase blocks, no cleanmarkers) and
@@ -83,7 +88,8 @@ that one.
 
 **Disk and time.** Roughly 15-20 GB with downloads and sstate. A cold build
 takes about an hour or two on 8 cores: toolchain, kernel, then the image.
-U-Boot itself builds in a minute or so.
+U-Boot itself builds in a minute or so. Switching `TCLIBC` later means the
+toolchain and kernel build again.
 
 ## Build
 
