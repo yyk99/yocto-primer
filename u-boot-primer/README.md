@@ -368,6 +368,30 @@ devtool finish u-boot ../meta-uboot     # turns your commits into a patch in the
 Commit in `workspace/sources/u-boot` before `devtool finish`; the commits
 become the patch files.
 
+## musl vs glibc: image size
+
+The same `uboot-primer-image` built with `TCLIBC = "glibc"` and with
+`TCLIBC = "musl"` (poky `scarthgap`, sizes in bytes):
+
+| Item                              | glibc      | musl       | Change  |
+|-----------------------------------|-----------:|-----------:|--------:|
+| rootfs `.jffs2` (goes into flash) |  8,388,608 |  6,029,312 | -28.1%  |
+| rootfs `.tar.bz2`                 |  6,481,576 |  4,582,169 | -29.3%  |
+| rootfs uncompressed               | 21,452,800 | 14,899,200 | -30.5%  |
+| installed packages                |         37 |         34 | -3      |
+| kernel `Image`                    | 24,076,800 | 24,076,800 | 0       |
+| `u-boot.bin`                      |  1,059,976 |  1,059,984 | +8      |
+
+- The package set is the same apart from `libc6`, `ldconfig`,
+  `glibc-locale-en-gb` and `locale-base-c`, which musl does not need, and the
+  added `musl` package.
+- The kernel and U-Boot do not depend on the C library, so only the rootfs
+  shrinks. (`u-boot.bin` differs by 8 bytes because it was rebuilt.)
+- To reproduce it, build once with each setting and compare the
+  `uboot-primer-image-*.rootfs.{jffs2,tar.bz2}` files in the deploy directory
+  (a `TCLIBC` change reuses `build/tmp`, so the new images replace the old
+  ones: record the sizes before switching).
+
 ## Troubleshooting
 
 - **Nothing happens after `Starting kernel ...`.** Wrong or missing
