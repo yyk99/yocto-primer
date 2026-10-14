@@ -5,6 +5,12 @@
 MACHINE ??= "qemuarm64-uboot"
 DISTRO ?= "poky"
 
+# musl instead of glibc: the root filesystem has to fit in the flash, and it
+# comes out about 30% smaller (14.9 MB instead of 21.5 MB uncompressed). Use
+# "glibc" for the default C library. Changing it rebuilds the toolchain and
+# the kernel, so pick one before the first build.
+TCLIBC ?= "musl"
+
 # Share downloads and sstate between build dirs (and with other checkouts)
 # by pointing these somewhere outside build/. Preferably do it once for all
 # projects with the repo root's site.conf.example (linked to

@@ -51,6 +51,11 @@ u-boot-primer/
 - **Device tree.** QEMU generates a DTB describing the `virt` board and hands
   it to U-Boot; U-Boot's own copy is at `$fdtcontroladdr`. Nothing here builds
   a DTB.
+- **musl, not glibc.** `local.conf.sample` sets `TCLIBC ?= "musl"`: the
+  rootfs has to fit in 63 MiB of flash, and with musl it is about 30%
+  smaller (14.9 MB instead of 21.5 MB uncompressed; the JFFS2 image is 5.75
+  MiB instead of 8 MiB). Set `TCLIBC = "glibc"` in `build/conf/local.conf`
+  to compare; that rebuilds the toolchain and the kernel.
 - **Root filesystem in flash.** Like a small router or IoT board, the rootfs
   is JFFS2 on NOR flash and there is no disk. Yocto builds it
   (`IMAGE_FSTYPES += "jffs2"`, 256 KiB erase blocks, no cleanmarkers) and
@@ -83,7 +88,8 @@ that one.
 
 **Disk and time.** Roughly 15-20 GB with downloads and sstate. A cold build
 takes about an hour or two on 8 cores: toolchain, kernel, then the image.
-U-Boot itself builds in a minute or so.
+U-Boot itself builds in a minute or so. Switching `TCLIBC` later means the
+toolchain and kernel build again.
 
 ## Build
 
@@ -361,6 +367,30 @@ devtool finish u-boot ../meta-uboot     # turns your commits into a patch in the
 
 Commit in `workspace/sources/u-boot` before `devtool finish`; the commits
 become the patch files.
+
+## musl vs glibc: image size
+
+The same `uboot-primer-image` built with `TCLIBC = "glibc"` and with
+`TCLIBC = "musl"` (poky `scarthgap`, sizes in bytes):
+
+| Item                              | glibc      | musl       | Change  |
+|-----------------------------------|-----------:|-----------:|--------:|
+| rootfs `.jffs2` (goes into flash) |  8,388,608 |  6,029,312 | -28.1%  |
+| rootfs `.tar.bz2`                 |  6,481,576 |  4,582,169 | -29.3%  |
+| rootfs uncompressed               | 21,452,800 | 14,899,200 | -30.5%  |
+| installed packages                |         37 |         34 | -3      |
+| kernel `Image`                    | 24,076,800 | 24,076,800 | 0       |
+| `u-boot.bin`                      |  1,059,976 |  1,059,984 | +8      |
+
+- The package set is the same apart from `libc6`, `ldconfig`,
+  `glibc-locale-en-gb` and `locale-base-c`, which musl does not need, and the
+  added `musl` package.
+- The kernel and U-Boot do not depend on the C library, so only the rootfs
+  shrinks. (`u-boot.bin` differs by 8 bytes because it was rebuilt.)
+- To reproduce it, build once with each setting and compare the
+  `uboot-primer-image-*.rootfs.{jffs2,tar.bz2}` files in the deploy directory
+  (a `TCLIBC` change reuses `build/tmp`, so the new images replace the old
+  ones: record the sizes before switching).
 
 ## Troubleshooting
 
