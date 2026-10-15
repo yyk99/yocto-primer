@@ -246,6 +246,83 @@ Things to know:
   `codespace-qt/scripts/novnc-bridge.sh 1 6081` and forward port 6081.
   Its default web port, 6080, is already taken by desktop-lite's noVNC.
 
+## Remote debugging (gdbserver)
+
+The image carries `gdbserver` and a Dropbear SSH server. The app is built
+with `-Og -g` (`DEBUG_BUILD = "1"`); the target gets the stripped binary and
+the symbols live in `linuxfb-demo-dbg`, which the SDK sysroot includes. So
+the debugger runs on the host and only `gdbserver` runs in QEMU.
+
+### Build the SDK
+
+The SDK provides the cross `gdb` and the target sysroot with the symbols:
+
+```bash
+bitbake linuxfb-image -c populate_sdk
+build/tmp/deploy/sdk/poky-glibc-*-toolchain-*.sh -d ~/sdk/linuxfb
+. ~/sdk/linuxfb/environment-setup-armv8a-poky-linux
+which aarch64-poky-linux-gdb
+```
+
+Most of the work is shared with `bitbake linuxfb-image`, but expect more
+time and disk for the SDK's own toolchain. The sysroot name
+(`armv8a-poky-linux` below) and the installer name depend on the release;
+adjust them to what your build produces.
+
+### Start the guest and gdbserver
+
+In one terminal, boot the image as in [Run](#run):
+
+```bash
+runqemu linuxfb-image slirp nographic publicvnc
+```
+
+In a second terminal, log in over SSH. `slirp` forwards a host port to the
+guest's port 22, usually `2222`; check runqemu's output. Root has no
+password (`debug-tweaks`). The `-L` option tunnels gdbserver's port, so
+QEMU needs no extra forward:
+
+```bash
+ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -L 2345:localhost:2345 root@localhost
+```
+
+In that session, stop the copy the init script started (it holds
+`/dev/fb0`) and run the app under gdbserver:
+
+```bash
+/etc/init.d/linuxfb-demo stop
+QT_QPA_PLATFORM=linuxfb:fb=/dev/fb0 gdbserver :2345 /usr/bin/linuxfb-demo
+```
+
+To attach to the running app instead, leave it started and use
+`gdbserver --attach :2345 $(pidof linuxfb-demo)`.
+
+### Connect from the host
+
+In a third terminal, with the SDK environment sourced:
+
+```bash
+aarch64-poky-linux-gdb ~/sdk/linuxfb/sysroots/armv8a-poky-linux/usr/bin/linuxfb-demo
+```
+
+```
+(gdb) set sysroot ~/sdk/linuxfb/sysroots/armv8a-poky-linux
+(gdb) target remote localhost:2345
+(gdb) break main
+(gdb) continue
+```
+
+- **Source files:** the compiled-in paths point into the build's work
+  directory, which `rm_work` deletes, so gdb can't find `main.cpp`. Run
+  `info source` to see the path, then
+  `set substitute-path <that path> <repo>/linuxfb/meta-linuxfb/recipes-qt/linuxfb-demo/files`.
+- **No symbols:** the stripped binary's symbols are in the sysroot's
+  `usr/bin/.debug/`. If gdb doesn't find them, run
+  `set debug-file-directory ~/sdk/linuxfb/sysroots/armv8a-poky-linux/usr/lib/debug`.
+- **Qt itself** is not built for debugging (its `-dbg` symbols are in the
+  sysroot, but its code is optimized), so stepping into Qt shows little.
+
 ## How the pieces fit
 
 - **Display.** runqemu gives `qemuarm64` a `virtio-gpu-pci` device.
