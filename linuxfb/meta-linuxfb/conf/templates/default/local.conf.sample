@@ -33,6 +33,11 @@ DISTRO_FEATURES:remove = "x11 wayland opengl vulkan ptest"
 # without this a build needs a lot more disk.
 INHERIT += "rm_work"
 
+# No SPDX/SBOM documents: poky inherits create-spdx by default, which adds
+# build time and disk use, and nothing here needs a software bill of
+# materials.
+INHERIT:remove = "create-spdx"
+
 # Root login with no password, handy for a QEMU image. Not for production.
 EXTRA_IMAGE_FEATURES ?= "debug-tweaks"
 
