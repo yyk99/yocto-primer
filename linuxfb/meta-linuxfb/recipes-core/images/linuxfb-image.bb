@@ -7,7 +7,12 @@ IMAGE_INSTALL = " \
     packagegroup-core-boot \
     ${CORE_IMAGE_EXTRA_INSTALL} \
     linuxfb-demo \
+    gdbserver \
 "
+
+# SSH (dropbear) to log in and copy files; gdbserver above is the debug
+# server for remote sessions from the host.
+IMAGE_FEATURES += "ssh-server-dropbear"
 
 IMAGE_LINGUAS = ""
 
