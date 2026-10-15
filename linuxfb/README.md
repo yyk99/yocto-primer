@@ -250,24 +250,30 @@ Things to know:
 
 The image carries `gdbserver` and a Dropbear SSH server. The app is built
 with `-Og -g` (`DEBUG_BUILD = "1"`); the target gets the stripped binary and
-the symbols live in `linuxfb-demo-dbg`, which the SDK sysroot includes. So
-the debugger runs on the host and only `gdbserver` runs in QEMU.
+the symbols live in `linuxfb-demo-dbg`. The debugger runs on the host and
+only `gdbserver` runs in QEMU. This needs no SDK: the host's
+`gdb-multiarch` is the debugger, and the target's libraries are fetched
+from the running guest through gdbserver.
 
-### Build the SDK
+### Prepare the host debugger
 
-The SDK provides the cross `gdb` and the target sysroot with the symbols:
+Install a multi-architecture gdb, build the image, then unpack the app and
+its `-dbg` package side by side:
 
 ```bash
-bitbake linuxfb-image -c populate_sdk
-build/tmp/deploy/sdk/poky-glibc-*-toolchain-*.sh -d ~/sdk/linuxfb
-. ~/sdk/linuxfb/environment-setup-armv8a-poky-linux
-which aarch64-poky-linux-gdb
+sudo apt install gdb-multiarch
+bitbake linuxfb-image
+mkdir -p ~/dbg/linuxfb
+for p in $(find build/tmp/deploy/ipk -name 'linuxfb-demo_*.ipk' -o -name 'linuxfb-demo-dbg_*.ipk'); do
+    ar p $p $(ar t $p | grep '^data.tar') | tar -x -C ~/dbg/linuxfb
+done
+ls ~/dbg/linuxfb/usr/bin ~/dbg/linuxfb/usr/bin/.debug
 ```
 
-Most of the work is shared with `bitbake linuxfb-image`, but expect more
-time and disk for the SDK's own toolchain. The sysroot name
-(`armv8a-poky-linux` below) and the installer name depend on the release;
-adjust them to what your build produces.
+Run it from `linuxfb/`. An `.ipk` is an `ar` archive; the `data.tar.*`
+member holds the files, and GNU `tar` detects its compression itself. gdb
+finds the symbols in `usr/bin/.debug/` next to the binary, so both packages
+must be unpacked into the same directory.
 
 ### Start the guest and gdbserver
 
@@ -300,28 +306,32 @@ To attach to the running app instead, leave it started and use
 
 ### Connect from the host
 
-In a third terminal, with the SDK environment sourced:
+In a third terminal:
 
 ```bash
-aarch64-poky-linux-gdb ~/sdk/linuxfb/sysroots/armv8a-poky-linux/usr/bin/linuxfb-demo
+gdb-multiarch ~/dbg/linuxfb/usr/bin/linuxfb-demo
 ```
 
 ```
-(gdb) set sysroot ~/sdk/linuxfb/sysroots/armv8a-poky-linux
+(gdb) set architecture aarch64
 (gdb) target remote localhost:2345
 (gdb) break main
 (gdb) continue
 ```
 
+With no `set sysroot`, gdb reads shared libraries from the guest through
+gdbserver (its `target:` default), so there is no sysroot on the host.
+
 - **Source files:** the compiled-in paths point into the build's work
   directory, which `rm_work` deletes, so gdb can't find `main.cpp`. Run
   `info source` to see the path, then
   `set substitute-path <that path> <repo>/linuxfb/meta-linuxfb/recipes-qt/linuxfb-demo/files`.
-- **No symbols:** the stripped binary's symbols are in the sysroot's
-  `usr/bin/.debug/`. If gdb doesn't find them, run
-  `set debug-file-directory ~/sdk/linuxfb/sysroots/armv8a-poky-linux/usr/lib/debug`.
-- **Qt itself** is not built for debugging (its `-dbg` symbols are in the
-  sysroot, but its code is optimized), so stepping into Qt shows little.
+- **No symbols:** gdb looks for `usr/bin/.debug/linuxfb-demo` next to the
+  binary. Check that both packages were unpacked into the same directory.
+- **Qt itself** is stripped on the target and built with optimization, so
+  stepping into Qt shows little. To debug it, add `dbg-pkgs`-style
+  symbols for Qt, or use an SDK (`bitbake linuxfb-image -c populate_sdk`),
+  which brings a sysroot with every package's `-dbg` files.
 
 ## How the pieces fit
 

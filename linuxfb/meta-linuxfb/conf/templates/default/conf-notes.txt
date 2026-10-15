@@ -6,9 +6,6 @@ You can now run 'bitbake <target>'
 Targets:
     linuxfb-image     qemuarm64 image that starts linuxfb-demo on /dev/fb0
     linuxfb-demo      just the Qt6 sample app (built with -Og -g)
-    linuxfb-image -c populate_sdk
-                      SDK installer with the cross gdb and the sysroot
-                      (build/tmp/deploy/sdk/), for remote debugging
 
 Run the image with:
     runqemu linuxfb-image slirp nographic publicvnc  (VNC on port 5900, serial here)
