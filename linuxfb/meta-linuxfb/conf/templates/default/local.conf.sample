@@ -38,6 +38,10 @@ INHERIT += "rm_work"
 # materials.
 INHERIT:remove = "create-spdx"
 
+# Only the ext4 rootfs: runqemu boots from it (plus the kernel), so skip the
+# other formats the machine adds (tar.bz2 and so on), which cost disk space.
+IMAGE_FSTYPES = "ext4"
+
 # Root login with no password, handy for a QEMU image. Not for production.
 EXTRA_IMAGE_FEATURES ?= "debug-tweaks"
 
