@@ -17,6 +17,12 @@ DEPENDS = "qtbase"
 
 inherit qt6-cmake update-rc.d
 
+# Build the app with -Og -g (instead of -O2) so stepping in gdb follows the
+# source. The target gets the stripped binary; the symbols are split into
+# linuxfb-demo-dbg, which the SDK sysroot includes (SDKIMAGE_FEATURES has
+# dbg-pkgs by default) for the host's cross gdb.
+DEBUG_BUILD = "1"
+
 INITSCRIPT_NAME = "linuxfb-demo"
 INITSCRIPT_PARAMS = "start 99 5 . stop 01 0 1 6 ."
 
