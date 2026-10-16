@@ -324,10 +324,11 @@ To attach to the running app instead, leave it started and use
 
 ### Connect from the host
 
-In a third terminal:
+In a third terminal, from `linuxfb/` (the `-x` script maps the source paths,
+see below):
 
 ```bash
-gdb-multiarch ~/dbg/linuxfb/usr/bin/linuxfb-demo
+gdb-multiarch -x gdb-paths.gdb ~/dbg/linuxfb/usr/bin/linuxfb-demo
 ```
 
 ```
@@ -340,10 +341,15 @@ gdb-multiarch ~/dbg/linuxfb/usr/bin/linuxfb-demo
 With no `set sysroot`, gdb reads shared libraries from the guest through
 gdbserver (its `target:` default), so there is no sysroot on the host.
 
-- **Source files:** the compiled-in paths point into the build's work
-  directory, which `rm_work` deletes, so gdb can't find `main.cpp`. Run
-  `info source` to see the path, then
-  `set substitute-path <that path> <repo>/linuxfb/meta-linuxfb/recipes-qt/linuxfb-demo/files`.
+- **Source files:** Yocto compiles with `-fdebug-prefix-map`, so the paths
+  in the debug info are `/usr/src/debug/<recipe>/<version>/<file>` (for
+  example `/usr/src/debug/linuxfb-demo/1.0/main.cpp`), which don't exist
+  on the host. gdb then prints `16  in /usr/src/debug/...` instead of the
+  source line. `gdb-paths.gdb` maps those prefixes to the recipes' `files/`
+  directories in this checkout with `set substitute-path`; it must be run
+  from `linuxfb/` and assumes version `1.0`. `info source` shows the path
+  gdb looks for, and `show substitute-path` the active rules. To map by
+  hand: `set substitute-path /usr/src/debug/linuxfb-demo/1.0 <checkout>/linuxfb/meta-linuxfb/recipes-qt/linuxfb-demo/files`.
 - **No symbols:** gdb looks for `usr/bin/.debug/linuxfb-demo` next to the
   binary. Check that both packages were unpacked into the same directory.
 - **Qt itself** is stripped on the target and built with optimization, so
@@ -357,7 +363,8 @@ gdbserver (its `target:` default), so there is no sysroot on the host.
 `meta-linuxfb/recipes-apps/debug-demo/files/debug-demo.c`) for practising
 without touching the framebuffer app. It is built with `-Og -g` like
 `linuxfb-demo`. Run it under gdbserver in the guest, with the same host
-steps as above but `~/dbg/linuxfb/usr/bin/debug-demo` as the file:
+steps as above but `~/dbg/linuxfb/usr/bin/debug-demo` as the file
+(`gdb-paths.gdb` covers its sources too):
 
 | Command in the guest                | Exercise                                      |
 |-------------------------------------|-----------------------------------------------|
