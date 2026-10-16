@@ -294,8 +294,7 @@ ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -L 2345:localhost:2345 root@localhost
 ```
 
-The same as an entry in `~/.ssh/config`, so that `ssh qemu-linuxfb` is
-enough:
+The same as an entry in `~/.ssh/config`:
 
 ```
 Host qemu-linuxfb
@@ -305,11 +304,17 @@ Host qemu-linuxfb
     StrictHostKeyChecking no
     UserKnownHostsFile /dev/null
     LocalForward 2345 localhost:2345
+    LogLevel ERROR
+```
+
+Now:
+
+```
+ssh qemu-linuxfb
 ```
 
 The guest gets a new SSH host key whenever the image is rebuilt, hence the
-two host-key options. Use them only for this local QEMU guest. Add
-`LogLevel ERROR` to hide the "Permanently added" warning.
+two host-key options. Use them only for this local QEMU guest. 
 
 In that session, stop the copy the init script started (it holds
 `/dev/fb0`) and run the app under gdbserver:
@@ -365,6 +370,17 @@ without touching the framebuffer app. It is built with `-Og -g` like
 `linuxfb-demo`. Run it under gdbserver in the guest, with the same host
 steps as above but `~/dbg/linuxfb/usr/bin/debug-demo` as the file
 (`gdb-paths.gdb` covers its sources too):
+
+```
+gdb-multiarch -x gdb-paths.gdb ~/dbg/linuxfb/usr/bin/debug-demo
+```
+
+```
+(gdb) set architecture aarch64
+(gdb) target remote localhost:2345
+(gdb) break main
+(gdb) continue
+```
 
 | Command in the guest                | Exercise                                      |
 |-------------------------------------|-----------------------------------------------|
