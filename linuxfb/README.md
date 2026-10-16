@@ -246,6 +246,149 @@ Things to know:
   `codespace-qt/scripts/novnc-bridge.sh 1 6081` and forward port 6081.
   Its default web port, 6080, is already taken by desktop-lite's noVNC.
 
+## Remote debugging (gdbserver)
+
+The image carries `gdbserver` and a Dropbear SSH server. The app is built
+with `-Og -g` (`DEBUG_BUILD = "1"`); the target gets the stripped binary and
+the symbols live in `linuxfb-demo-dbg`. The debugger runs on the host and
+only `gdbserver` runs in QEMU. This needs no SDK: the host's
+`gdb-multiarch` is the debugger, and the target's libraries are fetched
+from the running guest through gdbserver.
+
+### Prepare the host debugger
+
+Install a multi-architecture gdb, build the image, then unpack the programs
+(`linuxfb-demo` and `debug-demo`) and their `-dbg` packages side by side:
+
+```bash
+sudo apt install gdb-multiarch
+bitbake linuxfb-image
+mkdir -p ~/dbg/linuxfb
+for p in $(find build/tmp/deploy/ipk -regex '.*/\(linuxfb-demo\|debug-demo\)\(-dbg\)?_.*\.ipk'); do
+    ar p $p $(ar t $p | grep '^data.tar') | tar -x --zstd -C ~/dbg/linuxfb
+done
+ls ~/dbg/linuxfb/usr/bin ~/dbg/linuxfb/usr/bin/.debug
+```
+
+Run it from `linuxfb/`. An `.ipk` is an `ar` archive; the `data.tar.*`
+member holds the files. It is zstd-compressed here, and `tar` can't detect
+that when reading from a pipe, hence `--zstd`; use `-J` or `-z` instead if
+`ar t` shows `data.tar.xz` or `data.tar.gz`. gdb finds the symbols in `usr/bin/.debug/` next to the binary, so both packages
+must be unpacked into the same directory.
+
+### Start the guest and gdbserver
+
+In one terminal, boot the image as in [Run](#run):
+
+```bash
+runqemu linuxfb-image slirp nographic publicvnc
+```
+
+In a second terminal, log in over SSH. `slirp` forwards a host port to the
+guest's port 22, usually `2222`; check runqemu's output. Root has no
+password (`debug-tweaks`). The `-L` option tunnels gdbserver's port, so
+QEMU needs no extra forward:
+
+```bash
+ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -L 2345:localhost:2345 root@localhost
+```
+
+The same as an entry in `~/.ssh/config`:
+
+```
+Host qemu-linuxfb
+    HostName localhost
+    Port 2222
+    User root
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+    LocalForward 2345 localhost:2345
+    LogLevel ERROR
+```
+
+Now:
+
+```
+ssh qemu-linuxfb
+```
+
+The guest gets a new SSH host key whenever the image is rebuilt, hence the
+two host-key options. Use them only for this local QEMU guest. 
+
+In that session, stop the copy the init script started (it holds
+`/dev/fb0`) and run the app under gdbserver:
+
+```bash
+/etc/init.d/linuxfb-demo stop
+QT_QPA_PLATFORM=linuxfb:fb=/dev/fb0 gdbserver :2345 /usr/bin/linuxfb-demo
+```
+
+To attach to the running app instead, leave it started and use
+`gdbserver --attach :2345 $(pidof linuxfb-demo)`.
+
+### Connect from the host
+
+In a third terminal, from `linuxfb/` (the `-x` script maps the source paths,
+see below):
+
+```bash
+gdb-multiarch -x gdb-paths.gdb ~/dbg/linuxfb/usr/bin/linuxfb-demo
+```
+
+```
+(gdb) set architecture aarch64
+(gdb) target remote localhost:2345
+(gdb) break main
+(gdb) continue
+```
+
+With no `set sysroot`, gdb reads shared libraries from the guest through
+gdbserver (its `target:` default), so there is no sysroot on the host.
+
+- **Source files:** Yocto compiles with `-fdebug-prefix-map`, so the paths
+  in the debug info are `/usr/src/debug/<recipe>/<version>/<file>` (for
+  example `/usr/src/debug/linuxfb-demo/1.0/main.cpp`), which don't exist
+  on the host. gdb then prints `16  in /usr/src/debug/...` instead of the
+  source line. `gdb-paths.gdb` maps those prefixes to the recipes' `files/`
+  directories in this checkout with `set substitute-path`; it must be run
+  from `linuxfb/` and assumes version `1.0`. `info source` shows the path
+  gdb looks for, and `show substitute-path` the active rules. To map by
+  hand: `set substitute-path /usr/src/debug/linuxfb-demo/1.0 <checkout>/linuxfb/meta-linuxfb/recipes-qt/linuxfb-demo/files`.
+- **No symbols:** gdb looks for `usr/bin/.debug/linuxfb-demo` next to the
+  binary. Check that both packages were unpacked into the same directory.
+- **Qt itself** is stripped on the target and built with optimization, so
+  stepping into Qt shows little. To debug it, add `dbg-pkgs`-style
+  symbols for Qt, or use an SDK (`bitbake linuxfb-image -c populate_sdk`),
+  which brings a sysroot with every package's `-dbg` files.
+
+### Exercises with debug-demo
+
+`debug-demo` is a small console program (`/usr/bin/debug-demo`, source in
+`meta-linuxfb/recipes-apps/debug-demo/files/debug-demo.c`) for practising
+without touching the framebuffer app. It is built with `-Og -g` like
+`linuxfb-demo`. Run it under gdbserver in the guest, with the same host
+steps as above but `~/dbg/linuxfb/usr/bin/debug-demo` as the file
+(`gdb-paths.gdb` covers its sources too):
+
+```
+gdb-multiarch -x gdb-paths.gdb ~/dbg/linuxfb/usr/bin/debug-demo
+```
+
+```
+(gdb) set architecture aarch64
+(gdb) target remote localhost:2345
+(gdb) break main
+(gdb) continue
+```
+
+| Command in the guest                | Exercise                                      |
+|-------------------------------------|-----------------------------------------------|
+| `gdbserver :2345 debug-demo fact 6` | `break factorial`, `continue`, `bt`, `finish`, `up`/`down`, `info locals` |
+| `gdbserver :2345 debug-demo list`   | `break sum`, `step`/`next`, `print *n`, `print n->next->value`, `watch total` |
+| `debug-demo loop &` then `gdbserver --attach :2345 $(pidof debug-demo)` | attach to a running process, `watch ticks`, `detach` |
+| `gdbserver :2345 debug-demo crash`  | `continue` to the SIGSEGV, then `bt` and `print n` |
+
 ## How the pieces fit
 
 - **Display.** runqemu gives `qemuarm64` a `virtio-gpu-pci` device.

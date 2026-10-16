@@ -18,9 +18,29 @@ DISTRO_FEATURES:remove = "x11 wayland opengl vulkan ptest"
 #DL_DIR ?= "${HOME}/yocto-cache/downloads"
 #SSTATE_DIR ?= "${HOME}/yocto-cache/sstate-cache"
 
+# Shallow git clones (off by default; uncomment to try): fetch the pinned
+# revision with a short history, and keep a small tarball of it in DL_DIR
+# (used next time instead of a full clone). Cuts the size of the git
+# sources (qtbase, kernel, gcc) a lot. Depth 1 drops tags, which a recipe
+# that runs "git describe" may need.
+# The first fetch of a revision still needs a full clone to make the
+# tarball; old full clones in DL_DIR/git2 can be deleted afterwards.
+#BB_GIT_SHALLOW = "1"
+#BB_GENERATE_SHALLOW_TARBALLS = "1"
+#BB_GIT_SHALLOW_DEPTH = "1"
+
 # Delete each recipe's work dir once it is built. Qt makes work dirs large;
 # without this a build needs a lot more disk.
 INHERIT += "rm_work"
+
+# No SPDX/SBOM documents: poky inherits create-spdx by default, which adds
+# build time and disk use, and nothing here needs a software bill of
+# materials.
+INHERIT:remove = "create-spdx"
+
+# Only the ext4 rootfs: runqemu boots from it (plus the kernel), so skip the
+# other formats the machine adds (tar.bz2 and so on), which cost disk space.
+IMAGE_FSTYPES = "ext4"
 
 # Root login with no password, handy for a QEMU image. Not for production.
 EXTRA_IMAGE_FEATURES ?= "debug-tweaks"

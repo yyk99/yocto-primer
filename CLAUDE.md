@@ -46,6 +46,47 @@ Guidance for Claude Code when working in this repository.
   without root, `bitbake -R <file with INHERIT:remove = "sanity"> -p` works
   (a missing host tool can be stubbed on `PATH` for the parse).
 
+## linuxfb remote debugging gotchas
+
+Setup and steps are in the "Remote debugging" section of `linuxfb/README.md`;
+these are the non-obvious parts.
+
+- **There is no SDK on purpose.** A killed `populate_sdk` build left about
+  42 GB in `build/tmp` and filled the disk. The debugger is the host's
+  `gdb-multiarch`; the app's symbols come from the `linuxfb-demo` and
+  `linuxfb-demo-dbg` (likewise `debug-demo`) `.ipk` files, unpacked into
+  the same directory so gdb finds `usr/bin/.debug/`. The ipk data member is
+  `data.tar.zst`, and `tar` only handles it from a pipe with `--zstd`.
+  Libraries are read from the guest through gdbserver (no `set sysroot`).
+- **Only the two demo apps are built with `-Og -g`** (`DEBUG_BUILD = "1"`
+  in their recipes). Qt and everything else keep Yocto's `-O2` and are
+  stripped on the target, so stepping into Qt shows little.
+- **Debug info paths are `/usr/src/debug/<recipe>/<version>/<file>`,** from
+  Yocto's `-fdebug-prefix-map`, not the work dir. Without a mapping gdb
+  prints `16  in /usr/src/debug/...` instead of the line. `gdb-paths.gdb`
+  does the `set substitute-path`; it hardcodes version `1.0` and builds
+  paths from the current directory, so run gdb from `linuxfb/`.
+- **`local.conf.sample` edits only reach new build dirs.** The template is
+  read when `build/conf/` is created, so changes to it (`create-spdx` off,
+  `IMAGE_FSTYPES = "ext4"`, the optional shallow clone settings) must be
+  copied into an existing `build/conf/local.conf` by hand.
+- **Stop the init-started app before running it under gdbserver:** it holds
+  `/dev/fb0` (`/etc/init.d/linuxfb-demo stop`). The SSH session that starts
+  gdbserver also carries the `-L 2345:localhost:2345` tunnel; QEMU needs no
+  extra forward. `slirp` maps host port 2222 to the guest's SSH.
+- **Never `source ./setup-build`.** It is a Python script; bash runs its
+  `import ...` lines as ImageMagick's `import`, which writes multi-MB
+  PostScript screenshots named `argparse`, `json`, `os`, `subprocess` into
+  the current directory. Use `source poky/oe-init-build-env build` with
+  `TEMPLATECONF`.
+- **Disk space.** A full build wants more than 45 GB free. `build/tmp` can
+  be deleted safely between runs: finished tasks stay in the shared sstate
+  cache (`~/yocto-cache`). Prune that cache with
+  `linuxfb/poky/scripts/sstate-cache-management.py -d -y --cache-dir=...`
+  (it removed 4042 duplicate files, 4.7 GB). In the killed `populate_sdk`
+  run, `rm_work` had not yet cleaned most work dirs (35 GB under
+  `build/tmp/work`).
+
 ## u-boot-primer gotchas
 
 - **The machine reuses qemuarm64's kernel by override and `KMACHINE`.**
