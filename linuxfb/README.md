@@ -265,14 +265,15 @@ sudo apt install gdb-multiarch
 bitbake linuxfb-image
 mkdir -p ~/dbg/linuxfb
 for p in $(find build/tmp/deploy/ipk -regex '.*/\(linuxfb-demo\|debug-demo\)\(-dbg\)?_.*\.ipk'); do
-    ar p $p $(ar t $p | grep '^data.tar') | tar -x -C ~/dbg/linuxfb
+    ar p $p $(ar t $p | grep '^data.tar') | tar -x --zstd -C ~/dbg/linuxfb
 done
 ls ~/dbg/linuxfb/usr/bin ~/dbg/linuxfb/usr/bin/.debug
 ```
 
 Run it from `linuxfb/`. An `.ipk` is an `ar` archive; the `data.tar.*`
-member holds the files, and GNU `tar` detects its compression itself. gdb
-finds the symbols in `usr/bin/.debug/` next to the binary, so both packages
+member holds the files. It is zstd-compressed here, and `tar` can't detect
+that when reading from a pipe, hence `--zstd`; use `-J` or `-z` instead if
+`ar t` shows `data.tar.xz` or `data.tar.gz`. gdb finds the symbols in `usr/bin/.debug/` next to the binary, so both packages
 must be unpacked into the same directory.
 
 ### Start the guest and gdbserver
@@ -292,6 +293,23 @@ QEMU needs no extra forward:
 ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -L 2345:localhost:2345 root@localhost
 ```
+
+The same as an entry in `~/.ssh/config`, so that `ssh qemu-linuxfb` is
+enough:
+
+```
+Host qemu-linuxfb
+    HostName localhost
+    Port 2222
+    User root
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+    LocalForward 2345 localhost:2345
+```
+
+The guest gets a new SSH host key whenever the image is rebuilt, hence the
+two host-key options. Use them only for this local QEMU guest. Add
+`LogLevel ERROR` to hide the "Permanently added" warning.
 
 In that session, stop the copy the init script started (it holds
 `/dev/fb0`) and run the app under gdbserver:
