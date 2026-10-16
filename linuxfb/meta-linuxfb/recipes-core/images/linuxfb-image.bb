@@ -8,6 +8,7 @@ IMAGE_INSTALL = " \
     ${CORE_IMAGE_EXTRA_INSTALL} \
     linuxfb-demo \
     gdbserver \
+    debug-demo \
 "
 
 # SSH (dropbear) to log in and copy files; gdbserver above is the debug

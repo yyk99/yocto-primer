@@ -257,14 +257,14 @@ from the running guest through gdbserver.
 
 ### Prepare the host debugger
 
-Install a multi-architecture gdb, build the image, then unpack the app and
-its `-dbg` package side by side:
+Install a multi-architecture gdb, build the image, then unpack the programs
+(`linuxfb-demo` and `debug-demo`) and their `-dbg` packages side by side:
 
 ```bash
 sudo apt install gdb-multiarch
 bitbake linuxfb-image
 mkdir -p ~/dbg/linuxfb
-for p in $(find build/tmp/deploy/ipk -name 'linuxfb-demo_*.ipk' -o -name 'linuxfb-demo-dbg_*.ipk'); do
+for p in $(find build/tmp/deploy/ipk -regex '.*/\(linuxfb-demo\|debug-demo\)\(-dbg\)?_.*\.ipk'); do
     ar p $p $(ar t $p | grep '^data.tar') | tar -x -C ~/dbg/linuxfb
 done
 ls ~/dbg/linuxfb/usr/bin ~/dbg/linuxfb/usr/bin/.debug
@@ -332,6 +332,21 @@ gdbserver (its `target:` default), so there is no sysroot on the host.
   stepping into Qt shows little. To debug it, add `dbg-pkgs`-style
   symbols for Qt, or use an SDK (`bitbake linuxfb-image -c populate_sdk`),
   which brings a sysroot with every package's `-dbg` files.
+
+### Exercises with debug-demo
+
+`debug-demo` is a small console program (`/usr/bin/debug-demo`, source in
+`meta-linuxfb/recipes-apps/debug-demo/files/debug-demo.c`) for practising
+without touching the framebuffer app. It is built with `-Og -g` like
+`linuxfb-demo`. Run it under gdbserver in the guest, with the same host
+steps as above but `~/dbg/linuxfb/usr/bin/debug-demo` as the file:
+
+| Command in the guest                | Exercise                                      |
+|-------------------------------------|-----------------------------------------------|
+| `gdbserver :2345 debug-demo fact 6` | `break factorial`, `continue`, `bt`, `finish`, `up`/`down`, `info locals` |
+| `gdbserver :2345 debug-demo list`   | `break sum`, `step`/`next`, `print *n`, `print n->next->value`, `watch total` |
+| `debug-demo loop &` then `gdbserver --attach :2345 $(pidof debug-demo)` | attach to a running process, `watch ticks`, `detach` |
+| `gdbserver :2345 debug-demo crash`  | `continue` to the SIGSEGV, then `bt` and `print n` |
 
 ## How the pieces fit
 
