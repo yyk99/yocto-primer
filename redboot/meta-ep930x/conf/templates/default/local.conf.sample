@@ -1,0 +1,44 @@
+# local.conf for the EP930x build (ep930x).
+# Generated from meta-ep930x/conf/templates/default/local.conf.sample by
+# oe-init-build-env; edit that file to change the defaults for new build dirs.
+
+MACHINE ??= "ep930x"
+DISTRO ?= "poky"
+
+# musl instead of glibc: the board has about 32 MB RAM, and the root filesystem
+# comes out about 30% smaller than with glibc, which also may not support
+# ARMv4T any more (unverified). Use
+# "glibc" for the default C library. Changing it rebuilds the toolchain and
+# the kernel, so pick one before the first build.
+TCLIBC ?= "musl"
+
+# Share downloads and sstate between build dirs (and with other checkouts)
+# by pointing these somewhere outside build/. Preferably do it once for all
+# projects with the repo root's site.conf.example (linked to
+# build/conf/site.conf); or set them here, e.g.:
+#DL_DIR ?= "${HOME}/yocto-cache/downloads"
+#SSTATE_DIR ?= "${HOME}/yocto-cache/sstate-cache"
+
+# Delete each recipe's work dir once it is built. Keep this off while you
+# hack on the kernel or the DTS and want to look at tmp/work/.
+INHERIT += "rm_work"
+RM_WORK_EXCLUDE += "linux-ep93xx"
+
+# Root login with no password, handy while bringing the board up. Not for production.
+EXTRA_IMAGE_FEATURES ?= "debug-tweaks"
+
+PACKAGE_CLASSES ?= "package_ipk"
+USER_CLASSES ?= "buildstats"
+PATCHRESOLVE = "noop"
+
+BB_DISKMON_DIRS ??= "\
+    STOPTASKS,${TMPDIR},1G,100K \
+    STOPTASKS,${DL_DIR},1G,100K \
+    STOPTASKS,${SSTATE_DIR},1G,100K \
+    STOPTASKS,/tmp,100M,100K \
+    HALT,${TMPDIR},100M,1K \
+    HALT,${DL_DIR},100M,1K \
+    HALT,${SSTATE_DIR},100M,1K \
+    HALT,/tmp,10M,1K"
+
+CONF_VERSION = "2"

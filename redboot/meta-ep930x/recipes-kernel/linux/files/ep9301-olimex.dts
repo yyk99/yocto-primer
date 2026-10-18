@@ -1,0 +1,80 @@
+// SPDX-License-Identifier: GPL-2.0-only OR BSD-2-Clause
+/*
+ * Device Tree file for the Olimex CS-EP930x_A board.
+ *
+ * Derived from the mainline ep93xx-edb9302.dts and checked against the
+ * schematic on the board's DVD (Datasheets/CS-E9302-SCH.gif): 32 MB SDRAM
+ * (K4S561632C) on SDCSN0, contiguous at 0 per RedBoot, 16 MB NOR flash (JS28F128J3C120, x16) on CSN6,
+ * KS8721BL PHY, GRLED/RLED on the dedicated LED pins. Still unverified:
+ * the PHY address (EDB9302's 1 is kept; PHYAD strapping is not legible).
+ */
+/dts-v1/;
+#include "ep93xx.dtsi"
+
+/ {
+	#address-cells = <1>;
+	#size-cells = <1>;
+	compatible = "olimex,cs-ep930x-a", "cirrus,ep9301";
+	model = "Olimex CS-EP930x_A";
+
+	chosen {
+	};
+
+	memory@0 {
+		device_type = "memory";
+		/* 32 MB, as RedBoot reports it; the ATAGS override this */
+		reg = <0x00000000 0x2000000>;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		led-0 {
+			label = "grled";
+			gpios = <&gpio4 0 GPIO_ACTIVE_HIGH>;
+			linux,default-trigger = "heartbeat";
+			function = LED_FUNCTION_HEARTBEAT;
+		};
+
+		led-1 {
+			label = "rdled";
+			gpios = <&gpio4 1 GPIO_ACTIVE_HIGH>;
+			function = LED_FUNCTION_FAULT;
+		};
+	};
+};
+
+&ebi {
+	flash@60000000 {
+		compatible = "cfi-flash";
+		reg = <0x60000000 0x1000000>;
+		bank-width = <2>;
+	};
+};
+
+&eth0 {
+	phy-handle = <&phy0>;
+};
+
+&gpio4 {
+	gpio-ranges = <&syscon 0 97 2>;
+};
+
+&mdio0 {
+	phy0: ethernet-phy@1 {
+		/* TODO: PHY address, see the header */
+		reg = <1>;
+		device_type = "ethernet-phy";
+	};
+};
+
+&uart0 {
+	status = "okay";
+};
+
+&uart1 {
+	status = "okay";
+};
+
+&usb0 {
+	status = "okay";
+};

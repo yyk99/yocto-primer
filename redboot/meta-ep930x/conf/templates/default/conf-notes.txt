@@ -1,0 +1,7 @@
+
+Common targets:
+    ep930x-image   minimal root filesystem (ext4 + tar.gz), goes on a USB stick
+    linux-ep93xx   just the kernel (zImage with the DTB appended)
+
+Shared downloads/sstate cache: see ../../site.conf.example, link it as
+conf/site.conf. Check with:  bitbake-getvar --value DL_DIR

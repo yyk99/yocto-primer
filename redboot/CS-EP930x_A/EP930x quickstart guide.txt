@@ -1,0 +1,77 @@
+EP930x quickstart guide
+
+Running default linux 2.6
+The EP930x development board from Olimex comes preloaded with all the necesarry software to run a complete operating system out of the box. All that is necessary is a +5VDC regulated power supply, capable of delivering at least 0.5 Amperes and a serial cable (male-female).
+First connect the board to a serial port on your computer and start a terminal program(e.g. HyperTerminal on Windows, minicom on Unix systems). Configure the serial port for 57600, 8N1 and no flow control. Then apply power to the board - you should see redboot starting up, then loading the linux kernel and root filesystem into memory and finally linux starting up. When booting has completed, you will be presented with a shell prompt for a small linux system to play with. 
+
+
+Running other linux versions
+If you want to run other version of linux than the supplied one, you should interrupt the Redboot process by pressing ctrl-C. You will be dropped to the redboot prompt and can use it for loading your custom system. You can do that through either the serial port or using the on-board ethernet. The serial port is universally available but is slow (4-5KB/s) while the network loading is fast but you should configure a server(bootp or http) on your network.
+
+To load a new system using the serial port type the following
+RedBoot> load -v -r -b <base_adress> -m ymodem
+In your terminal program(HyperTerminal) choose Transfer->Send File. Make sure the protocol is set to "Ymodem" and use the "Browse" button to locate the required file. Click the send button. A progress bar should appear informing you about the ongoing transfer
+
+To load a file from the network you should set up a server (bootp or http) on your network and place the file in the server's data directory. Then power up the board and interrupt the startup script. Use the following commands:
+RedBoot> load -v -r -b <base_adress> -h <server_adress> <filename>
+for bootp loading, or
+RedBoot> load -v -r -b <base_adress> -m http -h <server_adress> <filename>
+for http loading
+
+If you want to save the just-loaded file to the onboard flash for later usage, issue the following command
+RedBoot> fis create -b <base_adress> -l <filesize> <filename>
+After that the file can be loaded by:
+RedBoot> fis load <filename>
+
+Executing the loaded image can be done with the 'exec' command. Consult the documentation if you need to pass arguments to it.
+
+An example of loading a ramdisk from flash, loading a linux kernel from http and booting it follows:
+== Executing boot script in 5.000 seconds - enter ^C to abort
+^C
+RedBoot> fis load ramdisk
+RedBoot> load -r -v -b 0x218000 -m http -h 192.168.0.13 /zimage-26
+Raw file loaded 0x00218000-0x0035427b, assumed entry at 0x00218000
+RedBoot> exec -r 0x1000000 0x218000
+Using base address 0x00218000 and length 0x0013c27c
+Uncompressing Linux.................................................................................... done, booting the kernel.
+
+Running a full linux distribution from a flash drive
+First you should get a flash drive of sufficient capacity - a 256MB one will suffice. Create an ext2 filesystem on it (make sure it is the first primary partition, e.g. sda1) and mount it. Then change to the mount directory and extract the rootdir.tgz arhive. WARNING! this archive extracts to the current directory and not to a sub-directory. Make sure you are in the mount directory prior to extracting.
+After extraction is finished, unmount the flash drive and plug it into the board. Interrupt the boot process and issue the following commands:
+
+RedBoot> fis load zImage
+RedBoot> exec -c "console=ttyAM0 root=/dev/sda1 rootdelay=10"
+
+The root password is "olimex".
+
+
+Building a custom Linux kernel
+You can use either the stock kernel (2.6.21 as of writing) with a small patch for the ethernet or use the Cirrus patches. The stock kernel is updated more often but lacks support for some specific devices on board (e.g. IrDA, SPI flash) while the Cirrus one has all the drivers but is updated less often and is supported by Cirrus only. Either way, if you want to build the kernel only, first make sure you have a working cross compiler in your PATH. Then start with some of the default configs, e.g. copy the corresponding .config_xxx file to the kernel directory, rename it to .config and issue:
+
+$ make ARCH=arm CROSS_COMPILE=arm-elf- oldconfig
+
+Substitute the "arm-elf-" part with whatever your cross-compiler's prefix is.
+Then you can actually build the kernel with the following command:
+
+$ make ARCH=arm CROSS_COMPILE=arm-elf- zImage
+
+After some time the kernel should be available as arch/arm/boot/zImage. You can upload this new kernel to the board in any of the ways described above.
+
+
+Running NetBSD
+NetBSD is a complete, free, Unix-like operatins system, renowned for it's portability across multiple architectures and high code quality. Getting NetBSD to run on the EP930x development board is really easy and provides many benefits, the most interesting of which is the ability to install the complete OS on a USB flash drive. This way you get a complete standalone system really fast. There are two ways to install the system:
+
+1) Insert a USB flash drive into one of the USB host ports on the EP930x board and power it up. Interrupt the boot script by pressing Ctrl-C and issue the following commands
+RedBoot> fis load netbsd_install
+RedBoot> go
+The kernel will boot and the installation program will start. Details about the NetBSD install process can be found at the documentation on http://www.netbsd.org
+
+2) Use the Unix 'dd' command to transfer the supplied on the CD image file "netbsd images/netbsd.img.gz" to a USB drive (it's size should be at least 1GB), e.g: 
+ep9301# gunzip netbsd.img.gz
+ep9301# dd if=netbsd.img of=/dev/sd1 (substitute /dev/sd1 with your USB drive, probably /dev/sda under linux)
+
+Now you are ready to go. Insert the flash drive into the usb port on the board and power it up. Interrupt the boot process and enter
+RedBoot> fis load netbsd
+RedBoot> go
+
+The root password is 'olimex'. Enjoy!
