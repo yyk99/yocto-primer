@@ -68,12 +68,20 @@ RAM while developing.
 - **musl, soft-float.** ARMv4T, no FPU.
 - **Root on USB.** `root=/dev/sda1 rootdelay=10` as in the quickstart guide.
 
+## Kernel config
+
+`files/defconfig` is a minimal config (`tinyconfig` plus the board's
+drivers, saved with `savedefconfig`): the `zImage` with the DTB appended is
+2.4 MB. A plain `inherit kernel` ignores `KBUILD_DEFCONFIG` and falls back to
+`multi_v7_defconfig`, which gave a 31 MB ARMv7 kernel that cannot run on this
+CPU, so the recipe ships its own `defconfig`.
+
 ## Open items
 
 - `ep9301-olimex.dts` is derived from mainline's EDB9302 board. The PHY
   address (KS8721BL, strapping not legible in the GIF) is still a guess.
-- The serial console name (`ttyAM0` in the old kernel) must be checked on 6.12.
-- RedBoot load address and `fis list` output must be read from the board.
+- Console: the DTS makes uart0 a PL011, so the console is `ttyAMA0` (the old
+  kernel's `ttyAM0`). Not yet confirmed on the board.
 - It is unverified that musl and every package build for ARMv4T.
 
 ## Build
