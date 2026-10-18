@@ -34,3 +34,14 @@ do_configure:append() {
     cat ${WORKDIR}/ep930x.cfg >> ${B}/.config
     oe_runmake -C ${S} O=${B} olddefconfig
 }
+
+# kernel-devicetree's bundling step reads ${D}/boot/zImage, but do_install
+# only writes zImage-${KERNEL_VERSION} (the plain name is made by the
+# package's postinst). Link it for do_deploy and remove it afterwards, so
+# the kernel-image package does not ship a file its postinst manages.
+do_deploy:prepend() {
+    ln -sf zImage-${KERNEL_VERSION} ${D}/${KERNEL_IMAGEDEST}/zImage
+}
+do_deploy:append() {
+    rm -f ${D}/${KERNEL_IMAGEDEST}/zImage
+}
