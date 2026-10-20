@@ -80,8 +80,6 @@ CPU, so the recipe ships its own `defconfig`.
 
 - `ep9301-olimex.dts` is derived from mainline's EDB9302 board. The PHY
   address (KS8721BL, strapping not legible in the GIF) is still a guess.
-- Console: the DTS makes uart0 a PL011, so the console is `ttyAMA0` (the old
-  kernel's `ttyAM0`). Not yet confirmed on the board.
 - It is unverified that musl and every package build for ARMv4T.
 
 ## Build
@@ -92,3 +90,27 @@ cd redboot
 TEMPLATECONF=$PWD/meta-ep930x/conf/templates/default source poky/oe-init-build-env build
 bitbake ep930x-image
 ```
+
+## Boot the kernel over TFTP
+
+Verified on the board: the kernel boots to `printk: legacy console [ttyAM0]
+enabled`. uart0 carries the PL010 peripheral id, so the console is `ttyAM0`,
+not `ttyAMA0`. No root filesystem is attached yet.
+
+On the PC (192.168.68.57), serve the deploy directory (leave it running):
+
+```
+sudo dnsmasq --no-daemon --port=0 --enable-tftp --tftp-root=$PWD/build/tmp/deploy/images/ep930x --listen-address=192.168.68.57 --bind-interfaces
+```
+
+At the `RedBoot>` prompt (give the board a free address on the same /24):
+
+```
+ip_address -l 192.168.68.100 -h 192.168.68.57
+load -v -r -b 0x00080000 zImage-ep9301-olimex.dtb.bin
+exec -r 0x800000 -s 0x800000 -c "console=ttyAM0,57600"
+```
+
+Keep the full `exec -r ... -s ...` form: a bare `exec -c ... <addr>` printed
+nothing even with the stock kernel. Add `earlyprintk` to the command line to
+see messages before the console registers (needs `CONFIG_DEBUG_LL`).
