@@ -1,61 +1,96 @@
-TODO: run the root filesystem from the board's NOR flash
-=========================================================
+TODO: CS-EP930x_A
+=================
 
-Status: planned, nothing built or written to the board yet. The USB stick
-root is the path being done first.
+Done
+----
+- Kernel in NOR flash: FIS entry "kernel" at 0x60040000, 3 MB slot,
+  zImage-ep9301-olimex.dtb.bin; the boot script (fconfig) loads it and the
+  root is the SD card (root=/dev/mmcblk0p1). Power-cycle boot verified.
+- Full flash backup before the change: ~/ep930x-flash-backup.bin (16 MB,
+  POSIX cksum 2236028822 16777216, matches RedBoot) and the two erased NetBSD
+  slots as ~/ep930x-netbsd.bin and ~/ep930x-netbsd_install.bin (5 MB each).
+- ssh (dropbear) and NTP (BusyBox ntpd, pool.ntp.org) in the image.
 
-Why
----
-The USB stick is the easy development loop. Final goal is a board that boots
-without a PC (TFTP) and without a stick: kernel and root filesystem in the
-16 MB NOR flash.
-
-Flash map today (RedBoot "fis list", flash 0x60000000-0x61000000)
-------------------------------------------------------------------
+Flash map now (RedBoot "fis list", flash 0x60000000-0x61000000)
+---------------------------------------------------------------
 RedBoot           0x60000000  0x00040000   keep
-netbsd            0x60040000  0x00500000   reuse
-netbsd_install    0x60540000  0x00500000   reuse
+kernel            0x60040000  0x00300000   ours (slot has room to grow)
+free              0x60340000  0x00700000   was the rest of the NetBSD slots
 ramdisk.gz        0x60A40000  0x00300000   keep (stock Linux, recovery)
 zImage            0x60D40000  0x00180000   keep (stock Linux, recovery)
-free              0x60EC0000  0x00100000   optional JFFS2 data later
+free              0x60EC0000  0x00100000
 RedBoot config    0x60FC0000  0x00001000   keep
 FIS directory     0x60FE0000  0x00020000   keep
 
-Reusing the two NetBSD slots (10 MB contiguous) loses the stock NetBSD
-images. The DVD copy has them. The stock Linux boot stays as the recovery.
+Recovery: the stock Linux still boots (fis load ramdisk.gz; fis load zImage;
+exec -r 0x800000 -s 0x800000 -c "console=ttyAM root=/dev/ram"). NetBSD can be
+restored from the two slot backups with load + fis create.
 
-New partitions inside the 10 MB
--------------------------------
-kernel   0x60040000  0x300000 (3 MB)  zImage-ep9301-olimex.dtb.bin (2.47 MB)
-rootfs   0x60340000  0x700000 (7 MB)  read-only SquashFS image
+Open items
+----------
 
-Build changes needed
---------------------
-- IMAGE_FSTYPES += "squashfs" (default gzip; xz would decompress slowly on
-  the ARM920T). Expect 3-4 MB, must fit in 7 MB.
-- Kernel options in files/defconfig: MTD_BLOCK, MTD_REDBOOT_PARTS, SQUASHFS,
-  OVERLAY_FS (or TMPFS for a writable /var and /tmp).
-- MTD_REDBOOT_PARTS makes the kernel read the FIS directory itself, so no
-  mtdparts= is needed. Get the real mtdN numbers from the boot log before
-  writing root=.
+1. Reboot ("Reboot failed -- System halted"): fixed in the kernel config.
+   Cause was CONFIG_POWER_RESET off (tinyconfig), so the EP93xx restart
+   driver (POWER_RESET_EP93XX, SWRST bit in DEVCFG) was not built. With
+   CONFIG_POWER_RESET=y "reboot" resets into RedBoot (tested over TFTP).
+   Still to do: write the new kernel into flash (the "kernel" entry has the
+   old one): 2560012 bytes = 0x27100c, cksum 575642029.
 
-Flash steps (once, from RedBoot)
---------------------------------
-1. Load the kernel into RAM over TFTP, check cksum.
-2. fis delete netbsd ; fis delete netbsd_install
-3. fis create -b 0x00080000 -r 0x00080000 -l 0x300000 kernel
-4. Load rootfs.squashfs over TFTP, fis create it as "rootfs" at 0x60340000.
-5. Verify: cksum of the flash region equals cksum of the file.
-Paste "fis list" before and after. Never run "fis init" or fconfig without -l
-(only the two NetBSD slots may be touched).
+2. Update the kernel from the running system (no PC, no TFTP).
+   - Kernel: CONFIG_MTD_REDBOOT_PARTS, so Linux reads the FIS directory and
+     names the partitions; RedBoot, RedBoot config and FIS directory become
+     read-only, so Linux cannot damage them.
+   - Image: add mtd-utils (flashcp, flash_erase).
+   - Boot script: replace "fis load kernel" with a copy of the whole 3 MB slot,
+     because "fis load" copies only the length stored in the FIS entry and a
+     bigger kernel written from Linux would be truncated:
+         cp -b 0x60040000 -d 0x00080000 -l 0x300000
+         exec -r 0x800000 -s 0x800000 -c "console=ttyAM0,57600 root=/dev/mmcblk0p1 rootwait" 0x00080000
+     Test by hand in RedBoot before changing the boot script (fconfig).
+   - Update: scp the bundle to the board, then flashcp -v <file> /dev/mtdN
+     (N = the "kernel" partition in /proc/mtd). A power cut leaves a bad
+     kernel but RedBoot is untouched: reload over TFTP.
+   - One-time bootstrap with RedBoot (fis create, as before) for the first
+     kernel that has MTD_REDBOOT_PARTS; do it together with item 1.
 
-Boot script (fconfig, only after a manual boot works)
------------------------------------------------------
-fis load kernel
-exec -r 0x800000 -s 0x800000 -c "console=ttyAM0,57600 root=/dev/mtdblock<N> rootfstype=squashfs ro"
+3. NTP: use the local server first.
+   ns2.home (192.168.68.55, OpenNTPD on "vrijdag") now listens on UDP 123 but
+   replied leap 3 / stratum 0 (unsynchronized) right after its restart. When
+   "ntpctl -s status" on it says "clock synced", probe it again, then change
+   ep930x-ntpd.init to: ntpd -p ns2.home -p pool.ntp.org
 
-Open questions
---------------
-- Exact mtd partition numbers and names reported by the kernel.
-- Writable data: overlay on tmpfs (lost at reboot) or JFFS2 in the free 1 MB.
-- Confirm the EP93xx remap/boot-alias detail in the user guide on the DVD.
+4. USB mass storage is flaky (random "cc 8" data overruns, then resets) on two
+   devices and both sockets, at every request size. Open question: does the
+   stock 2.6.24 kernel also fail on a long read? In the stock Linux run twice:
+       dd if=/dev/sda bs=64k count=4096 | md5sum
+   (reference checksum for the first 256 MB of the image on the stick:
+   65433966c9fbe35227acdd78be6c919a). If stock fails too, it is the board's
+   USB 1.1 host; if not, keep digging in ohci-platform. The SD card is the
+   root for now, so this does not block anything.
+
+5. Smaller items.
+   - pinctrl warning: "does not have pin group gpio3agrp" (DTS pinctrl).
+   - boot scripts print "ip: SIOCGIFFLAGS: No such device".
+   - SD slot: card-detect and write-protect lines are not wired (broken-cd);
+     the chip select gpio5 3 is inferred from the stock log, not read from the
+     schematic.
+   - PHY address (KS8721BL strapping, kept at 1); ethernet works with it.
+   - Remove debug-tweaks (empty root password, root ssh login) before any real
+     use.
+   - RAM is four 8 MB banks (0x0, 0x1000000, 0x4000000, 0x5000000) per the
+     ATAGS, not one contiguous 32 MB.
+   - Confirm the EP93xx remap/boot-alias detail in the user guide on the DVD.
+
+Optional: root filesystem in flash
+----------------------------------
+Only needed to boot without the SD card. Free area: 0x60340000-0x60A40000
+(7 MB). Build IMAGE_FSTYPES += "squashfs" (default gzip), kernel options
+MTD_BLOCK, SQUASHFS and OVERLAY_FS or TMPFS (writable /var, /tmp); with
+MTD_REDBOOT_PARTS the partition shows up by name, so no mtdparts= is needed.
+Create it with fis create at 0x60340000, verify with cksum, then boot with
+root=/dev/mtdblock<N> rootfstype=squashfs ro. Writable data could use JFFS2
+in the free 1 MB at 0x60EC0000.
+
+Rules for flash work: paste "fis list" before and after, verify every write
+with cksum, never run "fis init", and only touch the "kernel" entry and the
+free areas.
