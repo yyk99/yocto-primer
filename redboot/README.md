@@ -91,8 +91,11 @@ CPU, so the recipe ships its own `defconfig`.
   the chip select `gpio5 3` is inferred, not read from the schematic.
 - RedBoot's ATAGS describe RAM as four 8 MB banks (0x0, 0x1000000, 0x4000000,
   0x5000000), not one contiguous 32 MB.
-- `udevd` logs `could not touch /run/udev/queue: Function not implemented`:
-  a syscall is missing from the minimal config.
+- The clock has no battery: `date` starts at 1970 on every boot. Add NTP.
+- `tinyconfig` turns off options that userland expects; more may surface.
+  `CONFIG_COMPAT_32BIT_TIME=y` is needed because musl calls the old 32-bit
+  time syscalls (`utimensat`, `clock_settime`) while the date fits in 32 bits;
+  without it `touch`, `hwclock` and `udevd` fail with `ENOSYS`.
 
 ## Build
 
