@@ -67,6 +67,27 @@
 	};
 };
 
+/*
+ * SD slot, MMC over SPI. Wiring taken from the stock 2.6.24 boot log
+ * ("spi0.43", card detection IRQs 81 and 82), not from the schematic:
+ * chip select 43 is GPIO port F line 3 (gpio5 3) if the old numbering is
+ * A=0..7, B=8..15, ..., F=40..47. Card detect and write protect are not
+ * wired up (broken-cd) until checked against the schematic. The slot
+ * shares the bus with the AT25F1024 EEPROM, which stays unused.
+ */
+&spi0 {
+	cs-gpios = <&gpio5 3 GPIO_ACTIVE_LOW>;
+	status = "okay";
+
+	mmc@0 {
+		compatible = "mmc-spi-slot";
+		reg = <0>;
+		spi-max-frequency = <10000000>;
+		voltage-ranges = <3200 3400>;
+		broken-cd;
+	};
+};
+
 &uart0 {
 	status = "okay";
 };

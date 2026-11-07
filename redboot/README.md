@@ -66,7 +66,9 @@ RAM while developing.
   only ATAGS. The DTB is appended to `zImage` (`KERNEL_DEVICETREE_BUNDLE`),
   and the kernel takes memory and the command line from the ATAGS.
 - **musl, soft-float.** ARMv4T, no FPU.
-- **Root on USB.** `root=/dev/sda1 rootdelay=10` as in the quickstart guide.
+- **Root on the SD card.** The slot is MMC over SPI (`spi0`, chip select
+  `gpio5 3`, wiring from the stock boot log); `root=/dev/mmcblk0p1 rootwait`.
+  USB root is unreliable, see Open items.
 
 ## Kernel config
 
@@ -81,6 +83,16 @@ CPU, so the recipe ships its own `defconfig`.
 - `ep9301-olimex.dts` is derived from mainline's EDB9302 board. The PHY
   address (KS8721BL, strapping not legible in the GIF) is still a guess.
 - It is unverified that musl and every package build for ARMv4T.
+- **USB mass storage is flaky.** The OHCI host enumerates a stick or card
+  reader, but sustained reads fail at random (`cc 8` data overrun, then
+  resets) on two devices and both sockets, at every request size. The stock
+  2.6.24 kernel reads 10 MB fine; a long stock read has not been compared.
+- The SD card-detect and write-protect lines are not wired up (`broken-cd`);
+  the chip select `gpio5 3` is inferred, not read from the schematic.
+- RedBoot's ATAGS describe RAM as four 8 MB banks (0x0, 0x1000000, 0x4000000,
+  0x5000000), not one contiguous 32 MB.
+- `udevd` logs `could not touch /run/udev/queue: Function not implemented`:
+  a syscall is missing from the minimal config.
 
 ## Build
 
@@ -95,7 +107,7 @@ bitbake ep930x-image
 
 Verified on the board: the kernel boots to `printk: legacy console [ttyAM0]
 enabled`. uart0 carries the PL010 peripheral id, so the console is `ttyAM0`,
-not `ttyAMA0`. No root filesystem is attached yet.
+not `ttyAMA0`.
 
 On the PC (192.168.68.57), serve the deploy directory (leave it running):
 
@@ -114,3 +126,30 @@ exec -r 0x800000 -s 0x800000 -c "console=ttyAM0,57600"
 Keep the full `exec -r ... -s ...` form: a bare `exec -c ... <addr>` printed
 nothing even with the stock kernel. Add `earlyprintk` to the command line to
 see messages before the console registers (needs `CONFIG_DEBUG_LL`).
+
+## Boot with the root on the SD card
+
+Write the image to the card on the PC. This erases the card: check the device
+name with `lsblk` first and replace `/dev/sdX` below.
+
+```
+sudo umount /dev/sdX1
+sudo wipefs -a /dev/sdX
+sudo parted -s /dev/sdX mklabel msdos mkpart primary ext4 1MiB 100%
+sudo dd if=build/tmp/deploy/images/ep930x/ep930x-image-ep930x.rootfs.ext4 of=/dev/sdX1 bs=4M conv=fsync status=progress
+sudo e2fsck -f -y /dev/sdX1
+sudo resize2fs /dev/sdX1
+sync
+```
+
+Put the card in the board's slot. At the `RedBoot>` prompt, with the TFTP
+server from above running:
+
+```
+ip_address -l 192.168.68.100 -h 192.168.68.57
+load -v -r -b 0x00080000 zImage-ep9301-olimex.dtb.bin
+exec -r 0x800000 -s 0x800000 -c "console=ttyAM0,57600 root=/dev/mmcblk0p1 rootwait"
+```
+
+Verified: the kernel finds `mmc0: new SDHC card on SPI`, mounts the ext4 root,
+starts init, and the `root@ep930x:~#` prompt appears on the console.
