@@ -55,10 +55,14 @@ exec -r 0x800000 -s 0x800000 -c "console=ttyAM root=/dev/ram"
 ```
 
 Network: board `192.168.0.93/24`, no gateway, default server
-`192.168.0.20`, MAC `00:00:00:00:54:33` (set by RedBoot; a mainline kernel
-does not read it). About 1 MB of flash is free (`0x60EC0000`-`0x60FC0000`);
-the 6.12 `zImage` will not fit the 1.5 MB `zImage` slot, so load it into
-RAM while developing.
+`192.168.0.20`. The MAC was `00:00:00:00:54:33`, a placeholder with no vendor
+prefix; it is now `02:00:00:00:54:33` (locally administered), set with
+`fconfig` (`Network hardware address [MAC]`, typed as `0x02:0x00:0x00:0x00:0x54:0x33`).
+The 6.12 `ep93xx_eth` driver does not choose an address: it reads back what
+RedBoot wrote into the MAC registers at start-up, and uses a random one only if
+they are all zero. The 6.12 `zImage` bundle (2.4 MB) does not fit the stock
+1.5 MB `zImage` slot, so it lives in its own 3 MB `kernel` slot, see the flash
+layout in `TODO.txt`.
 
 ## Design
 
