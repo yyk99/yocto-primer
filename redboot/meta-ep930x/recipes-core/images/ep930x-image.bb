@@ -1,7 +1,9 @@
-SUMMARY = "Minimal image for the Olimex CS-EP930x_A: boots to a shell on the serial console"
+SUMMARY = "Minimal image for the Olimex CS-EP930x_A: serial console, ssh and NTP"
 
 inherit core-image
 
-IMAGE_INSTALL = "packagegroup-core-boot"
+# dropbear; the template's debug-tweaks also allows root logins with an empty
+# password over ssh (development only)
+IMAGE_FEATURES += "ssh-server-dropbear"
 
-# TODO: add dropbear (ssh) once the ethernet driver is confirmed working.
+IMAGE_INSTALL = "packagegroup-core-boot ep930x-ntpd"

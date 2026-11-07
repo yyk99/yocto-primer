@@ -91,7 +91,12 @@ CPU, so the recipe ships its own `defconfig`.
   the chip select `gpio5 3` is inferred, not read from the schematic.
 - RedBoot's ATAGS describe RAM as four 8 MB banks (0x0, 0x1000000, 0x4000000,
   0x5000000), not one contiguous 32 MB.
-- The clock has no battery: `date` starts at 1970 on every boot. Add NTP.
+- The clock has no battery: `date` starts at 1970 on every boot. The image
+  runs BusyBox `ntpd` against `pool.ntp.org` (`ep930x-ntpd`); it needs DHCP
+  and DNS, and takes a short while after boot to set the time.
+- ssh (dropbear) is in the image, and `debug-tweaks` allows root logins with
+  an empty password. Development only: remove `debug-tweaks` from
+  `EXTRA_IMAGE_FEATURES` before any real use.
 - `tinyconfig` turns off options that userland expects; more may surface.
   `CONFIG_COMPAT_32BIT_TIME=y` is needed because musl calls the old 32-bit
   time syscalls (`utimensat`, `clock_settime`) while the date fits in 32 bits;
@@ -132,18 +137,46 @@ see messages before the console registers (needs `CONFIG_DEBUG_LL`).
 
 ## Boot with the root on the SD card
 
-Write the image to the card on the PC. This erases the card: check the device
-name with `lsblk` first and replace `/dev/sdX` below.
+Write the image to the card on the PC, from the `redboot/` directory. This
+erases the card. Check which device it is first:
 
 ```
-sudo umount /dev/sdX1
-sudo wipefs -a /dev/sdX
-sudo parted -s /dev/sdX mklabel msdos mkpart primary ext4 1MiB 100%
-sudo dd if=build/tmp/deploy/images/ep930x/ep930x-image-ep930x.rootfs.ext4 of=/dev/sdX1 bs=4M conv=fsync status=progress
-sudo e2fsck -f -y /dev/sdX1
-sudo resize2fs /dev/sdX1
+lsblk -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINT,TRAN,MODEL
+```
+
+The size and `TRAN` column tell the card apart from the PC's own disk. The
+device name depends on how the card is attached:
+
+- **The PC's built-in card slot:** `/dev/mmcblk0`, partition `/dev/mmcblk0p1`
+  (note the `p`).
+- **A USB card reader:** `/dev/sda` (or `sdb`, ...), partition `/dev/sda1`.
+
+For the built-in slot:
+
+```
+sudo umount /dev/mmcblk0p1
+sudo wipefs -a /dev/mmcblk0
+sudo parted -s /dev/mmcblk0 mklabel msdos mkpart primary ext4 1MiB 100%
+sudo dd if=build/tmp/deploy/images/ep930x/ep930x-image-ep930x.rootfs.ext4 of=/dev/mmcblk0p1 bs=4M conv=fsync status=progress
+sudo e2fsck -f -y /dev/mmcblk0p1
+sudo resize2fs /dev/mmcblk0p1
 sync
 ```
+
+For a USB card reader that shows up as `/dev/sda`:
+
+```
+sudo umount /dev/sda1
+sudo wipefs -a /dev/sda
+sudo parted -s /dev/sda mklabel msdos mkpart primary ext4 1MiB 100%
+sudo dd if=build/tmp/deploy/images/ep930x/ep930x-image-ep930x.rootfs.ext4 of=/dev/sda1 bs=4M conv=fsync status=progress
+sudo e2fsck -f -y /dev/sda1
+sudo resize2fs /dev/sda1
+sync
+```
+
+If the reader is another device name, replace `sda` in all lines. Then eject
+the card (`sudo eject /dev/mmcblk0` or `sudo eject /dev/sda`).
 
 Put the card in the board's slot. At the `RedBoot>` prompt, with the TFTP
 server from above running:

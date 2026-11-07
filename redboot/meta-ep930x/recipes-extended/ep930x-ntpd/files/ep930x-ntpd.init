@@ -1,0 +1,28 @@
+#!/bin/sh
+# Set the clock from NTP with BusyBox ntpd (it daemonizes itself).
+
+NTPD=/usr/sbin/ntpd
+SERVER=pool.ntp.org
+
+case "$1" in
+start)
+    echo -n "Starting ntpd: "
+    start-stop-daemon -S -q -x $NTPD -- -p $SERVER
+    echo "done"
+    ;;
+stop)
+    echo -n "Stopping ntpd: "
+    start-stop-daemon -K -q -x $NTPD
+    echo "done"
+    ;;
+restart)
+    $0 stop
+    $0 start
+    ;;
+*)
+    echo "Usage: $0 {start|stop|restart}"
+    exit 1
+    ;;
+esac
+
+exit 0
