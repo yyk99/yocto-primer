@@ -255,6 +255,23 @@ digits are a DejaVu Sans Mono Bold subset embedded in `digits_font.c`
 (regenerate with `make_font.sh`); LVGL draws them with `tiny_ttf`, enabled by
 `lvgl_%.bbappend`.
 
+Try the apps on the PC first, without the board: QEMU user-mode emulation
+runs the ARM binaries directly (there is no EP93xx machine in QEMU, so this is
+not a board emulation). The tarball holds the musl loader and all the
+libraries. Verified with the clock:
+
+```
+sudo apt install qemu-user
+mkdir -p ~/lvgl-root
+tar -xzf build/tmp/deploy/images/ep930x/ep930x-lvgl-image-ep930x.rootfs.tar.gz -C ~/lvgl-root
+qemu-arm -L ~/lvgl-root -E LD_LIBRARY_PATH=$HOME/lvgl-root/usr/lib ~/lvgl-root/usr/bin/lvgl-clock
+```
+
+Connect a VNC viewer to `localhost:5900` (no ssh tunnel: QEMU shares the PC's
+network and the app listens on the loopback address). This checks layout,
+fonts and the mouse, not speed: the PC's CPU runs the code, and the demo's
+load label and the clock show the PC's load and time.
+
 Gotchas:
 
 - LVGL 9.1 has no `LV_TICK_CUSTOM`; the app must register a clock with
