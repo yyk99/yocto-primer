@@ -1,5 +1,6 @@
 # Upstream layer, checked out by ./setup-layers
 poky/
+meta-openembedded/
 # Also written by ./setup-layers
 .oe-layers.json
 setup-build

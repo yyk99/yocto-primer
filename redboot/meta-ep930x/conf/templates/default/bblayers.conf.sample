@@ -9,5 +9,6 @@ BBFILES ?= ""
 BBLAYERS ?= " \
   ##OEROOT##/meta \
   ##OEROOT##/meta-poky \
+  ##OEROOT##/../meta-openembedded/meta-oe \
   ##OEROOT##/../meta-ep930x \
   "

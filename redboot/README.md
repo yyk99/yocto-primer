@@ -193,3 +193,61 @@ exec -r 0x800000 -s 0x800000 -c "console=ttyAM0,57600 root=/dev/mmcblk0p1 rootwa
 
 Verified: the kernel finds `mmc0: new SDHC card on SPI`, mounts the ext4 root,
 starts init, and the `root@ep930x:~#` prompt appears on the console.
+
+## LVGL over VNC (separate tar.gz file system)
+
+The EP9301/EP9302 has no video output, so the demo renders with LVGL into
+memory and serves the picture with LibVNCServer. **Status: built and run on
+the board; the picture shows in a VNC viewer and mouse clicks work.**
+
+- `ep930x-lvgl-image` builds only a tar.gz holding `lvgl-vnc` (a 320x240 RGB565
+  demo: label, button, slider, load average), `liblvgl`, `libvncserver` and
+  musl. It is not bootable and not part of `ep930x-image`.
+- `meta-openembedded/meta-oe` supplies the `lvgl` and `libvncserver` recipes.
+  It is pinned in `setup-layers.json`, so run `./setup-layers --destdir .`
+  again, and add the line below to an existing `build/conf/bblayers.conf`
+  (new build dirs get it from the template):
+
+```
+  /path/to/redboot/meta-openembedded/meta-oe \
+```
+
+- `lvgl_%.bbappend` and `libvncserver_%.bbappend` trim both libraries (no
+  DRM/fbdev/SDL, no zlib/jpeg/TLS/websockets/threads; colour depth 16, 128 KB
+  LVGL memory).
+
+Build, from `redboot/`:
+
+```
+TEMPLATECONF=$PWD/meta-ep930x/conf/templates/default source poky/oe-init-build-env build
+bitbake ep930x-lvgl-image
+ls -l tmp/deploy/images/ep930x/ep930x-lvgl-image-ep930x.rootfs.tar.gz
+tar -tzf tmp/deploy/images/ep930x/ep930x-lvgl-image-ep930x.rootfs.tar.gz
+```
+
+Copy it to the board and unpack it into its own directory (the board runs the
+same musl, so the libraries are found with `LD_LIBRARY_PATH`):
+
+```
+scp tmp/deploy/images/ep930x/ep930x-lvgl-image-ep930x.rootfs.tar.gz root@192.168.68.84:/tmp/
+ssh root@192.168.68.84 'mkdir -p /opt/lvgl && tar -xzf /tmp/ep930x-lvgl-image-ep930x.rootfs.tar.gz -C /opt/lvgl'
+ssh -L 5900:localhost:5900 root@192.168.68.84 'LD_LIBRARY_PATH=/opt/lvgl/usr/lib /opt/lvgl/usr/bin/lvgl-vnc'
+```
+
+The last command keeps the tunnel and the demo running. On the PC connect a
+VNC viewer to `localhost:5900` (for example `vncviewer localhost:5900`). The
+server listens on the board's loopback address only, so the tunnel is the way
+in. If the first command prints a missing library, list `/opt/lvgl/usr/lib`.
+
+Gotchas:
+
+- LVGL 9.1 has no `LV_TICK_CUSTOM`; the app must register a clock with
+  `lv_tick_set_cb()`. Without it LVGL's time stays 0, its timers never run and
+  the pointer is never read, so clicks are silently lost.
+- `lv_conf.h` is installed in `include/lvgl/`, so the app compiles with
+  `-I${STAGING_INCDIR}/lvgl`.
+- The demo treats the mouse as a touch panel: only the left button counts, and
+  the pointer moves only while it is pressed.
+- TigerVNC 1.13 has no zoom option, so the 320x240 picture is small on a
+  high-resolution screen. RealVNC's `vncviewer -Scaling=300% localhost:5900` or
+  Remmina's scaled mode enlarge it.
