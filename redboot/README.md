@@ -200,10 +200,12 @@ The EP9301/EP9302 has no video output, so the demo renders with LVGL into
 memory and serves the picture with LibVNCServer. **Status: built and run on
 the board; the picture shows in a VNC viewer and mouse clicks work.**
 
-- `ep930x-lvgl-image` builds only a tar.gz holding two 320x240 RGB565 apps,
+- `ep930x-lvgl-image` builds only a tar.gz holding three 320x240 RGB565 apps,
   `liblvgl`, `libvncserver` and musl. `lvgl-vnc` is a widget demo (label,
   button, slider, load average); `lvgl-clock` is a digital clock like the one
-  in `suziepi-touchscreen/apps/clock` (big `HH:MM`, date below). Both share
+  in `suziepi-touchscreen/apps/clock` (big `HH:MM`, date below); `lvgl-15-puzzle` is
+  the 15 puzzle (tap a tile next to the gap, "New" reshuffles; shuffles are
+  random legal moves, so always solvable). All share
   `vnc-display.c` (LVGL + VNC + touch-style pointer). It is not bootable and not part of `ep930x-image`.
 - `meta-openembedded/meta-oe` supplies the `lvgl` and `libvncserver` recipes.
   It is pinned in `setup-layers.json`, so run `./setup-layers --destdir .`
@@ -241,8 +243,8 @@ VNC viewer to `localhost:5900` (for example `vncviewer localhost:5900`). The
 server listens on the board's loopback address only, so the tunnel is the way
 in. If the first command prints a missing library, list `/opt/lvgl/usr/lib`.
 
-Run the clock instead of the demo (`-rfbport` picks another port, so both can
-run at once):
+Run the puzzle the same way with `/opt/lvgl/usr/bin/lvgl-15-puzzle`.
+Run the clock instead of the demo (`-rfbport` picks another port, so both can run at once):
 
 ```
 ssh -L 5900:localhost:5900 root@192.168.68.84 'LD_LIBRARY_PATH=/opt/lvgl/usr/lib /opt/lvgl/usr/bin/lvgl-clock'

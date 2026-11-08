@@ -1,4 +1,4 @@
-SUMMARY = "LVGL apps shown over VNC (the board has no display): a widget demo and a digital clock"
+SUMMARY = "LVGL apps shown over VNC (the board has no display): a widget demo, a digital clock and a 15 puzzle"
 # digits_font.c is a subset of DejaVu Sans Mono Bold (BitstreamVera license)
 LICENSE = "MIT & BitstreamVera"
 LIC_FILES_CHKSUM = " \
@@ -11,6 +11,7 @@ SRC_URI = " \
     file://vnc-display.h \
     file://lvgl-vnc.c \
     file://lvgl-clock.c \
+    file://lvgl-15-puzzle.c \
     file://digits_font.c \
 "
 
@@ -20,7 +21,7 @@ S = "${WORKDIR}"
 
 do_compile() {
     # lvgl installs lv_conf.h in include/lvgl/, which lvgl.h finds only from there
-    for app in lvgl-vnc lvgl-clock; do
+    for app in lvgl-vnc lvgl-clock lvgl-15-puzzle; do
         extra=""
         [ $app = lvgl-clock ] && extra=digits_font.c
         ${CC} ${CFLAGS} -I${STAGING_INCDIR}/lvgl ${LDFLAGS} $app.c $extra vnc-display.c \
@@ -30,5 +31,5 @@ do_compile() {
 
 do_install() {
     install -d ${D}${bindir}
-    install -m 0755 lvgl-vnc lvgl-clock ${D}${bindir}/
+    install -m 0755 lvgl-vnc lvgl-clock lvgl-15-puzzle ${D}${bindir}/
 }
