@@ -81,6 +81,18 @@ Open items
      ATAGS, not one contiguous 32 MB.
    - Confirm the EP93xx remap/boot-alias detail in the user guide on the DVD.
 
+6. Own distribution (we use poky, hence its motd warning at login).
+   - Add meta-ep930x/conf/distro/ep930x.conf: "require conf/distro/poky.conf",
+     then DISTRO = "ep930x", DISTRO_NAME, DISTRO_VERSION, TCLIBC = "musl".
+     (A standalone distro without poky.conf needs many more variables.)
+   - Template local.conf.sample: DISTRO ?= "ep930x"; move TCLIBC out of it.
+     Existing build dirs need the DISTRO line edited by hand. Not tried yet:
+     check how much it rebuilds.
+   - recipes-core/base-files/base-files_%.bbappend with our own motd (board
+     name, development image, root login has no password); keep a short
+     version of the warning, debug-tweaks is still on.
+   - Add the new layer settings to the README.
+
 Optional: root filesystem in flash
 ----------------------------------
 Only needed to boot without the SD card. Free area: 0x60340000-0x60A40000
