@@ -200,9 +200,11 @@ The EP9301/EP9302 has no video output, so the demo renders with LVGL into
 memory and serves the picture with LibVNCServer. **Status: built and run on
 the board; the picture shows in a VNC viewer and mouse clicks work.**
 
-- `ep930x-lvgl-image` builds only a tar.gz holding `lvgl-vnc` (a 320x240 RGB565
-  demo: label, button, slider, load average), `liblvgl`, `libvncserver` and
-  musl. It is not bootable and not part of `ep930x-image`.
+- `ep930x-lvgl-image` builds only a tar.gz holding two 320x240 RGB565 apps,
+  `liblvgl`, `libvncserver` and musl. `lvgl-vnc` is a widget demo (label,
+  button, slider, load average); `lvgl-clock` is a digital clock like the one
+  in `suziepi-touchscreen/apps/clock` (big `HH:MM`, date below). Both share
+  `vnc-display.c` (LVGL + VNC + touch-style pointer). It is not bootable and not part of `ep930x-image`.
 - `meta-openembedded/meta-oe` supplies the `lvgl` and `libvncserver` recipes.
   It is pinned in `setup-layers.json`, so run `./setup-layers --destdir .`
   again, and add the line below to an existing `build/conf/bblayers.conf`
@@ -238,6 +240,20 @@ The last command keeps the tunnel and the demo running. On the PC connect a
 VNC viewer to `localhost:5900` (for example `vncviewer localhost:5900`). The
 server listens on the board's loopback address only, so the tunnel is the way
 in. If the first command prints a missing library, list `/opt/lvgl/usr/lib`.
+
+Run the clock instead of the demo (`-rfbport` picks another port, so both can
+run at once):
+
+```
+ssh -L 5900:localhost:5900 root@192.168.68.84 'LD_LIBRARY_PATH=/opt/lvgl/usr/lib /opt/lvgl/usr/bin/lvgl-clock'
+```
+
+The clock shows the board's local time. The image has no time zone database,
+so it is UTC unless `TZ` is set (for example `TZ=CET-1CEST` before the
+command, POSIX format). The time itself comes from NTP (`ep930x-ntpd`). The
+digits are a DejaVu Sans Mono Bold subset embedded in `digits_font.c`
+(regenerate with `make_font.sh`); LVGL draws them with `tiny_ttf`, enabled by
+`lvgl_%.bbappend`.
 
 Gotchas:
 
