@@ -282,8 +282,10 @@ Gotchas:
 - The demo treats the mouse as a touch panel: only the left button counts, and
   the pointer moves only while it is pressed.
 - TigerVNC 1.13 has no zoom option, so the 320x240 picture is small on a
-  high-resolution screen. Remmina works (verified: `remmina -c
-  vnc://localhost:5900`, picture and mouse; set Scaling to "Scaled" in the
-  profile to follow the window size). RealVNC's `vncviewer -Scaling=FitAuto
-  localhost:5900` should also scale (not tried). On the Remmina console it
-  prints harmless-looking `Gtk-CRITICAL gtk_widget_get_display` warnings.
+  high-resolution screen. Two viewers scale it:
+  - **RealVNC** (`vncviewer localhost:5900`) rescales the picture when the
+    window is resized. Its default is `Scaling=FitAutoAspect`; `-Scaling=300%`
+    or `-Scaling=FitAuto` choose another mode.
+  - **Remmina** (`remmina -c vnc://localhost:5900`): picture and mouse work;
+    set Scaling to "Scaled" in the profile to follow the window size. It
+    prints harmless-looking `Gtk-CRITICAL gtk_widget_get_display` warnings.
