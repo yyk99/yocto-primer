@@ -14,6 +14,7 @@ redboot/
 ├── CS-EP930x_A/                        vendor quickstart guide
 └── meta-ep930x/
     ├── conf/machine/ep930x.conf        armv4t, zImage with appended DTB
+    ├── conf/distro/ep930x.conf         our distro: poky.conf + identity + musl
     ├── conf/templates/default/         TEMPLATECONF: local.conf + bblayers.conf
     ├── recipes-kernel/linux/           linux-ep93xx_6.12.bb, ep930x.cfg, ep9301-olimex.dts
     └── recipes-core/images/ep930x-image.bb
@@ -70,6 +71,15 @@ layout in `TODO.txt`.
   only ATAGS. The DTB is appended to `zImage` (`KERNEL_DEVICETREE_BUNDLE`),
   and the kernel takes memory and the command line from the ATAGS.
 - **musl, soft-float.** ARMv4T, no FPU.
+- **Own distribution, `ep930x`** (`conf/distro/ep930x.conf`). It requires
+  `poky.conf`, so features and SDK settings stay Poky's, and sets the identity
+  (`DISTRO_NAME`, `DISTRO_VERSION`) and `TCLIBC = "musl"`. `TARGET_VENDOR` stays
+  `-poky`: it is part of the `tmp/work` directory names, and changing it
+  rebuilds everything. The login banner is our own `/etc/motd`
+  (`recipes-core/base-files/files/ep930x/motd`; base-files picks the directory
+  named after the distro, as meta-poky does for `poky`). An existing
+  `build/conf/local.conf` needs `DISTRO ?= "ep930x"` by hand; switching
+  reran only about 40 tasks (base-files and the images) in a dry run.
 - **Root on the SD card.** The slot is MMC over SPI (`spi0`, chip select
   `gpio5 3`, wiring from the stock boot log); `root=/dev/mmcblk0p1 rootwait`.
   USB root is unreliable, see Open items.

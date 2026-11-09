@@ -3,14 +3,9 @@
 # oe-init-build-env; edit that file to change the defaults for new build dirs.
 
 MACHINE ??= "ep930x"
-DISTRO ?= "poky"
+DISTRO ?= "ep930x"
 
-# musl instead of glibc: the board has about 32 MB RAM, and the root filesystem
-# comes out about 30% smaller than with glibc, which also may not support
-# ARMv4T any more (unverified). Use
-# "glibc" for the default C library. Changing it rebuilds the toolchain and
-# the kernel, so pick one before the first build.
-TCLIBC ?= "musl"
+# The C library (musl) is set by the distro, conf/distro/ep930x.conf.
 
 # Share downloads and sstate between build dirs (and with other checkouts)
 # by pointing these somewhere outside build/. Preferably do it once for all

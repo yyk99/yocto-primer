@@ -10,6 +10,11 @@ Done
   POSIX cksum 2236028822 16777216, matches RedBoot) and the two erased NetBSD
   slots as ~/ep930x-netbsd.bin and ~/ep930x-netbsd_install.bin (5 MB each).
 - ssh (dropbear) and NTP (BusyBox ntpd, pool.ntp.org) in the image.
+- Own distribution "ep930x" (conf/distro/ep930x.conf, on top of poky.conf)
+  with its own /etc/motd. Possible later steps: trim DISTRO_FEATURES
+  (POKY_DEFAULT_DISTRO_FEATURES, still Poky's: opengl, wayland, vulkan, ...;
+  rebuilds a lot) and drop debug-tweaks.
+- LVGL apps over VNC (demo, clock, 15 puzzle) as a tar.gz, see README.
 
 Flash map now (RedBoot "fis list", flash 0x60000000-0x61000000)
 ---------------------------------------------------------------
@@ -80,18 +85,6 @@ Open items
    - RAM is four 8 MB banks (0x0, 0x1000000, 0x4000000, 0x5000000) per the
      ATAGS, not one contiguous 32 MB.
    - Confirm the EP93xx remap/boot-alias detail in the user guide on the DVD.
-
-6. Own distribution (we use poky, hence its motd warning at login).
-   - Add meta-ep930x/conf/distro/ep930x.conf: "require conf/distro/poky.conf",
-     then DISTRO = "ep930x", DISTRO_NAME, DISTRO_VERSION, TCLIBC = "musl".
-     (A standalone distro without poky.conf needs many more variables.)
-   - Template local.conf.sample: DISTRO ?= "ep930x"; move TCLIBC out of it.
-     Existing build dirs need the DISTRO line edited by hand. Not tried yet:
-     check how much it rebuilds.
-   - recipes-core/base-files/base-files_%.bbappend with our own motd (board
-     name, development image, root login has no password); keep a short
-     version of the warning, debug-tweaks is still on.
-   - Add the new layer settings to the README.
 
 Optional: root filesystem in flash
 ----------------------------------

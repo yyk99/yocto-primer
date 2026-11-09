@@ -1,0 +1,4 @@
+Olimex CS-EP930x_A (EP9302, ARM920T): EP930x development distro
+
+WARNING: this is a development image. The root account has an empty password
+and can log in over ssh (debug-tweaks). Do not use it in production.
