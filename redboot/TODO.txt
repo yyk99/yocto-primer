@@ -40,6 +40,7 @@ Open items
    CONFIG_POWER_RESET=y "reboot" resets into RedBoot (tested over TFTP).
    Still to do: write the new kernel into flash (the "kernel" entry has the
    old one): 2560012 bytes = 0x27100c, cksum 575642029.
+   Steps: README, "Flash the kernel and boot from flash".
 
 2. Update the kernel from the running system (no PC, no TFTP).
    - Kernel: CONFIG_MTD_REDBOOT_PARTS, so Linux reads the FIS directory and

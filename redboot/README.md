@@ -204,6 +204,49 @@ exec -r 0x800000 -s 0x800000 -c "console=ttyAM0,57600 root=/dev/mmcblk0p1 rootwa
 Verified: the kernel finds `mmc0: new SDHC card on SPI`, mounts the ext4 root,
 starts init, and the `root@ep930x:~#` prompt appears on the console.
 
+## Flash the kernel and boot from flash
+
+The kernel lives in the FIS entry `kernel` (flash `0x60040000`, a 3 MB slot).
+The boot script in RedBoot's `fconfig` loads it, so the board starts by
+itself with the root on the SD card. To put a new kernel there, run the TFTP
+server from the section above, and at the `RedBoot>` prompt (the numbers are
+for the current bundle: 2560012 bytes = `0x27100c`, POSIX cksum 575642029;
+take them from `ls -l` and `cksum` of your `zImage-ep9301-olimex.dtb.bin`, and
+RedBoot's `load` line prints the end address, which gives the length):
+
+```
+ip_address -l 192.168.68.100 -h 192.168.68.57
+fis list
+load -v -r -b 0x00080000 zImage-ep9301-olimex.dtb.bin
+cksum -b 0x00080000 -l 0x27100c
+```
+
+The `cksum` must match the one on the PC (`cksum zImage-ep9301-olimex.dtb.bin`).
+Then write it to the `kernel` slot. If RedBoot says the image exists, answer
+`y` (or run `fis delete kernel` first):
+
+```
+fis create -f 0x60040000 -b 0x00080000 -r 0x00080000 -e 0x00080000 -l 0x300000 -s 0x27100c kernel
+cksum -b 0x60040000 -l 0x27100c
+fis list
+```
+
+The second `cksum` (read from flash) must again match. `-l 0x300000` is the
+slot size, `-s` the real length. Only touch the `kernel` entry: never run
+`fis init`, and paste `fis list` before and after.
+
+Boot it from flash, by hand or with a reset (the boot script then runs
+after its 5 s timeout):
+
+```
+fis load kernel
+exec -r 0x800000 -s 0x800000 -c "console=ttyAM0,57600 root=/dev/mmcblk0p1 rootwait"
+```
+
+`reset` is a software reset; a power cycle also works. `fis load` copies only
+the length stored in the FIS entry (`-s`), so after a bigger kernel always
+give the real size to `fis create`.
+
 ## LVGL over VNC (separate tar.gz file system)
 
 The EP9301/EP9302 has no video output, so the demo renders with LVGL into
